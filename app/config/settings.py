@@ -372,6 +372,14 @@ class Settings(BaseSettings):
 
     smtp_timeout_seconds: int = 10
 
+    # Railway may block outbound SMTP. Production can use the HTTPS Resend
+    # API while local development keeps the existing SMTP path.
+    email_provider: str = "smtp"
+
+    resend_api_key: str | None = None
+
+    resend_from_email: str | None = None
+
     # ======================================================
     # Provider configuration helpers
     # ======================================================
@@ -519,12 +527,21 @@ class Settings(BaseSettings):
             errors.append("EMBEDDING_MODEL_PATH or EMBEDDING_CACHE_DIR must point to a bundled model cache")
         if not self.csrf_enabled:
             errors.append("CSRF_ENABLED must be true when browser cookies are enabled")
-        if not self.smtp_configured:
-            errors.append("SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_EMAIL must be configured")
-        if not 1 <= int(self.smtp_port) <= 65535:
-            errors.append("SMTP_PORT must be between 1 and 65535")
-        if not 3 <= int(self.smtp_timeout_seconds) <= 60:
-            errors.append("SMTP_TIMEOUT_SECONDS must be between 3 and 60")
+        email_provider = str(self.email_provider or "").strip().lower()
+        if email_provider not in {"smtp", "resend"}:
+            errors.append("EMAIL_PROVIDER must be smtp or resend")
+        elif email_provider == "resend":
+            if not str(self.resend_api_key or "").strip():
+                errors.append("RESEND_API_KEY must be configured when EMAIL_PROVIDER=resend")
+            if not str(self.resend_from_email or "").strip():
+                errors.append("RESEND_FROM_EMAIL must be configured when EMAIL_PROVIDER=resend")
+        else:
+            if not self.smtp_configured:
+                errors.append("SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_EMAIL must be configured")
+            if not 1 <= int(self.smtp_port) <= 65535:
+                errors.append("SMTP_PORT must be between 1 and 65535")
+            if not 3 <= int(self.smtp_timeout_seconds) <= 60:
+                errors.append("SMTP_TIMEOUT_SECONDS must be between 3 and 60")
         return errors
 
     def require_production_configuration(self) -> None:

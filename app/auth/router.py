@@ -76,6 +76,10 @@ def _send_email(
     body: str,
 ) -> None:
 
+    if str(settings.email_provider or "smtp").strip().lower() == "resend":
+        _send_email_via_resend(to_email, subject, body)
+        return
+
     from email.message import EmailMessage
     import smtplib
 
@@ -128,6 +132,53 @@ def _send_email(
                 message
             )
 
+
+def _send_email_via_resend(
+    to_email: str,
+    subject: str,
+    body: str,
+) -> None:
+    """Send transactional email over HTTPS when SMTP egress is blocked."""
+
+    import json
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request as UrlRequest
+    from urllib.request import urlopen
+
+    api_key = str(settings.resend_api_key or "").strip()
+    from_email = str(settings.resend_from_email or "").strip()
+    if not api_key or not from_email:
+        raise RuntimeError("HTTPS email provider is not configured")
+
+    payload = json.dumps(
+        {
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "text": body,
+        }
+    ).encode("utf-8")
+    request = UrlRequest(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=int(settings.smtp_timeout_seconds)) as response:
+            if not 200 <= int(response.status) < 300:
+                raise RuntimeError("HTTPS email provider returned an unexpected status")
+    except HTTPError as exc:
+        raise RuntimeError(f"HTTPS email provider rejected request: status={exc.code}") from None
+    except URLError as exc:
+        raise RuntimeError(
+            "HTTPS email provider is unavailable: "
+            f"reason={type(exc.reason).__name__}"
+        ) from None
 
 def _verification_url(
     token: str,

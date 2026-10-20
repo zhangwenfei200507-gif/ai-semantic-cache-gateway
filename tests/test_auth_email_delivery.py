@@ -31,6 +31,26 @@ class _Connection:
 
 
 class VerificationEmailDeliveryTests(unittest.TestCase):
+    def test_resend_uses_https_without_smtp(self):
+        from app.auth.router import _send_email
+        from app.config.settings import settings
+
+        response = unittest.mock.Mock(status=200)
+        response.__enter__ = unittest.mock.Mock(return_value=response)
+        response.__exit__ = unittest.mock.Mock(return_value=False)
+
+        with (
+            patch.object(settings, "email_provider", "resend"),
+            patch.object(settings, "resend_api_key", "test-key"),
+            patch.object(settings, "resend_from_email", "no-reply@example.com"),
+            patch("urllib.request.urlopen", return_value=response) as urlopen,
+        ):
+            _send_email("user@example.com", "Verify", "Open this link")
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.resend.com/emails")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-key")
+
     def test_resend_initializes_database_before_lookup(self):
         from app.auth.router import resend_verification
         from app.auth.schemas import ResendVerificationRequest
