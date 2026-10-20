@@ -203,13 +203,20 @@ def register_user(
 
     except Exception as exc:
 
+        # The account is intentionally retained so the user can resend the
+        # verification email; expose only a safe delivery failure signal.
+        logger.warning(
+            "Registration verification email failed: error_type=%s smtp_code=%s",
+            type(exc).__name__,
+            getattr(exc, "smtp_code", None),
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
                 "Registration succeeded, "
                 "but verification email could not be sent."
             ),
-        ) from exc
+        ) from None
 
     return _user_response(user)
 

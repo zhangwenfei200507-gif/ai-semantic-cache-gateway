@@ -31,6 +31,38 @@ class _Connection:
 
 
 class VerificationEmailDeliveryTests(unittest.TestCase):
+    def test_register_reports_delivery_failure_without_exposing_smtp_error(self):
+        from app.auth.router import register_user
+        from app.auth.schemas import RegisterRequest
+
+        user = {
+            "id": 19,
+            "email": "new-user@example.com",
+            "is_active": True,
+            "is_verified": False,
+            "is_admin": False,
+            "created_at": "2026-10-20T00:00:00+00:00",
+            "workspace": None,
+        }
+        smtp_error = smtplib.SMTPAuthenticationError(535, b"authentication failed")
+
+        with (
+            patch("app.auth.router.enforce_rate_limit"),
+            patch("app.auth.router.register", return_value=user),
+            patch("app.auth.router.create_email_verification", return_value="token"),
+            patch("app.auth.router._verification_url", return_value="https://example.test/verify"),
+            patch("app.auth.router._send_email", side_effect=smtp_error),
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                register_user(
+                    RegisterRequest(email="new-user@example.com", password="password-123"),
+                    SimpleNamespace(),
+                )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("Registration succeeded", str(raised.exception.detail))
+        self.assertNotIn("authentication failed", str(raised.exception.detail).lower())
+
     def test_resend_reports_smtp_failure_without_exposing_credentials(self):
         from app.auth.router import resend_verification
         from app.auth.schemas import ResendVerificationRequest
