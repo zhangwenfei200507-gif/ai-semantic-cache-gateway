@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -49,6 +51,8 @@ router = APIRouter(
     prefix="/api/auth",
     tags=["auth"],
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _user_response(
@@ -295,8 +299,18 @@ def resend_verification(
                 ),
             )
 
-        except Exception:
-            pass
+        except Exception as exc:
+            # Keep SMTP credentials and provider responses out of logs while making
+            # delivery failures diagnosable in the deployment logs.
+            logger.warning(
+                "Verification email delivery failed: error_type=%s smtp_code=%s",
+                type(exc).__name__,
+                getattr(exc, "smtp_code", None),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification email delivery is temporarily unavailable. Try again later.",
+            ) from None
 
     return {
         "message": (

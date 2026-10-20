@@ -359,12 +359,24 @@ function addVerificationHelp(){
  button.onclick=async()=>{
    const email=document.getElementById("email")?.value.trim();
    if(!email)return toast("Enter your email first","error");
+   const error=document.getElementById("auth-error");
+   const originalLabel=button.textContent;
+   button.disabled=true;
+   button.textContent="Sending…";
+   error.textContent="Sending verification email…";
+   error.className="auth-info";
    try{
      const result=await api("/api/auth/resend-verification",{method:"POST",allowAuthRedirect:false,body:JSON.stringify({email})});
-     const error=document.getElementById("auth-error");
      error.textContent=result.message||"If verification is required, a new email has been sent.";
-     error.className="auth-info";
-   }catch(error){toast(error.message,"error")}
+     error.className="auth-success";
+   }catch(error){
+     const message=document.getElementById("auth-error");
+     message.textContent=error.message;
+     message.className="auth-error";
+   }finally{
+     button.disabled=false;
+     button.textContent=originalLabel;
+   }
  };
  links.appendChild(button);
 }
