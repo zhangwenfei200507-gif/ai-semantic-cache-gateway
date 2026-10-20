@@ -11,6 +11,20 @@ from app.security.guards import public_error
 router = APIRouter()
 
 
+def _database_ready() -> bool:
+    """Check PostgreSQL only when the application is configured to use it."""
+    if not settings.database_url:
+        return True
+    try:
+        from app.db.postgres import get_postgres_connection
+
+        with get_postgres_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+        return True
+    except Exception:
+        return False
+
+
 @router.get("/health")
 def health():
     # Liveness must stay independent of Redis, PostgreSQL, S3 and the
@@ -38,6 +52,13 @@ def ready():
             detail=public_error(exc, "Embedding model is not ready"),
         ) from exc
 
+    database_ok = _database_ready()
+    if not database_ok:
+        raise HTTPException(
+            status_code=503,
+            detail={"ready": False, "database": "unavailable"},
+        )
+
     result = gateway.health()
     if not result["redis"]:
         raise HTTPException(
@@ -49,6 +70,10 @@ def ready():
         "embedding": {
             "ready": gateway.cache.embedding_service.is_ready,
             "model": settings.embedding_model,
+        },
+        "database": {
+            "backend": "postgres" if settings.database_url else "sqlite",
+            "ready": database_ok,
         },
         **result,
     }
