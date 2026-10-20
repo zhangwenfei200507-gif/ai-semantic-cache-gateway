@@ -80,6 +80,16 @@ class ImageGenerationTests(unittest.TestCase):
                 self.assertEqual(router.route(messages(text)).modality, "image")
         classifier.classify.assert_not_called()
 
+    def test_ordinary_text_skips_remote_classifier(self):
+        classifier = Mock()
+        router = ModalityRouter(classifier_client=classifier)
+
+        decision = router.route(messages("我想了解一下中国股市情况"))
+
+        self.assertEqual(decision.modality, "text")
+        self.assertEqual(decision.reason, "ordinary text request detected locally")
+        classifier.classify.assert_not_called()
+
     def test_explanations_and_negation_not_generation(self):
         for text in ("如何生成图片？", "解释图片生成原理", "不要生成图片，只回答文字",
                      "How to generate an image?", "Redis是什么？"):

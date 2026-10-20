@@ -11,7 +11,7 @@
 - 密码重置
 - PBKDF2-SHA256 密码哈希
 - HMAC-SHA256 Bearer Token
-- SQLite 用户数据库
+- SQLite 本地开发 / PostgreSQL 生产数据库
 
 这里的“Google邮箱”指可以使用 Gmail 地址注册/登录，并不等于 Google OAuth 登录。
 
@@ -59,8 +59,10 @@ POST `/api/auth/forgot-password`
 
 POST `/api/auth/reset-password`
 
-## 注意
+## 邮件与生产配置
 
-当前 `forgot-password` 为开发测试版本，会在响应里返回 `dev_reset_token`。
+注册验证和密码重置通过 SMTP 发送链接；生产环境不会在响应中返回原始
+验证 Token 或密码重置 Token。请在部署环境中配置 SMTP 主机、端口、TLS、
+用户名、密码和发件人地址，并通过 `AUTH_FRONTEND_URL` 设置生产链接域名。
 
-正式部署到 GitHub/公网前，应改为 SMTP/邮件服务发送真正的重置链接，并删除 `dev_reset_token` 返回。
+生产环境还必须使用 PostgreSQL、启用 CSRF，并配置 `AUTH_SECRET_KEY`。

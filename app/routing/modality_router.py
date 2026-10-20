@@ -226,6 +226,30 @@ class ModalityRouter:
             text,
         ))
 
+    @staticmethod
+    def _needs_classifier(messages: list[dict[str, Any]]) -> bool:
+        """Return whether an image-related request remains ambiguous locally.
+
+        Ordinary text requests do not need a second upstream model call. Keep
+        the classifier for image-related wording that is not explicit enough
+        for ``_looks_like_image_generation`` to resolve safely.
+        """
+        message = next((m for m in reversed(messages) if m.get("role") == "user"), {})
+        content = message.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(
+                str(part.get("text", ""))
+                for part in content
+                if isinstance(part, dict)
+            )
+        text = str(content).strip().lower()
+        return bool(re.search(
+            r"(图片|图像|插画|照片|海报|头像|壁纸|视觉|图像识别|image|picture|photo|"
+            r"illustration|poster|portrait|wallpaper|vision)",
+            text,
+            re.IGNORECASE,
+        ))
+
     # ============================================================
     # Fallback classification
     # ============================================================
@@ -333,6 +357,16 @@ class ModalityRouter:
                 modality=self.IMAGE,
                 confidence=0.97,
                 reason="explicit image-generation intent detected locally",
+            )
+
+        # A normal text request is already unambiguous after the local checks.
+        # Avoid an extra remote classifier round trip, which can otherwise add
+        # a full classifier timeout before the text provider is called.
+        if not self._needs_classifier(messages):
+            return ModalityDecision(
+                modality=self.TEXT,
+                confidence=0.99,
+                reason="ordinary text request detected locally",
             )
 
         # --------------------------------------------------------

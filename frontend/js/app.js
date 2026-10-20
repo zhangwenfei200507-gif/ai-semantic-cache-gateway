@@ -83,6 +83,11 @@ async function api(path,options={}){
   };
   const token=explicitToken||tokenStore();
   if(token) headers.Authorization=`Bearer ${token}`;
+  // Keep cookie-authenticated writes valid after account switching or session restore.
+  if(["POST","PUT","PATCH","DELETE"].includes(String(opts.method||"GET").toUpperCase())){
+    const csrf=document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith("ascg_csrf_token="));
+    if(csrf&&!headers["X-CSRF-Token"]) headers["X-CSRF-Token"]=decodeURIComponent(csrf.slice("ascg_csrf_token=".length));
+  }
   opts.headers=headers;
 
   const controller=new AbortController();
@@ -170,7 +175,12 @@ function ensureDesignSystem(){
 function applyTheme(theme){const value=["light","dark","sakura"].includes(theme)?theme:"light";document.documentElement.classList.remove("dark","theme-sakura");if(value==="dark")document.documentElement.classList.add("dark");if(value==="sakura")document.documentElement.classList.add("theme-sakura");localStorage.setItem("ascg_theme",value);const button=document.getElementById("theme-toggle");if(button){button.textContent=value==="sakura"?"✿":value==="dark"?"☾":"✦";button.title=value==="sakura"?"Switch to light theme":value==="dark"?"Switch to Sakura theme":"Switch to dark theme"}}
 function nextTheme(){const current=localStorage.getItem("ascg_theme")||"light";return current==="light"?"dark":current==="dark"?"sakura":"light"}
 async function loadIdentity(){const u=await api("/api/auth/me");state.user=u;const label=u.email.split("@")[0];const initials=(label.match(/[a-zA-Z]/)?.[0]||"U").toUpperCase();document.getElementById("sidebar-user").innerHTML=`<div class="avatar">${initials}</div><div class="user-text"><strong>${esc(u.email)}</strong><span>${u.is_admin?"Administrator":"User"}</span></div>`;document.getElementById("top-user").textContent=label;document.getElementById("top-avatar").textContent=initials;const title=document.querySelector(".topbar-title");if(title&&u.workspace){const chip=document.createElement("span");chip.className="workspace-chip";chip.textContent=`Workspace · ${u.workspace.name}`;title.appendChild(chip)}}
-async function loadStatus(){try{const d=await api("/api/system",{timeoutMs:2500});state.system=d;const g=d.gateway||{};const r=d.redis||{};document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div><div class="status-row"><span>Status</span><strong>${esc(g.status||"-")}</strong></div><div class="status-row"><span>Model</span><strong>${esc(g.model||"-")}</strong></div><div class="status-row"><span>Redis</span><strong>${r.connected?"Connected":"Offline"}</strong></div>`}catch{document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div>${statusBadge("Loading slowly")}`}}
+async function loadStatus(){
+ if(!state.user?.is_admin){
+  document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div>${statusBadge("Workspace ready")}`;
+  return;
+ }
+ try{const d=await api("/api/system",{timeoutMs:2500});state.system=d;const g=d.gateway||{};const r=d.redis||{};document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div><div class="status-row"><span>Status</span><strong>${esc(g.status||"-")}</strong></div><div class="status-row"><span>Model</span><strong>${esc(g.model||"-")}</strong></div><div class="status-row"><span>Redis</span><strong>${r.connected?"Connected":"Offline"}</strong></div>`}catch{document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div>${statusBadge("Loading slowly")}`}}
 
 function donut(hit,miss){const total=hit+miss;if(total<=0)return `<div class="donut empty"><span>0%</span></div>`;const p=hit/total;const deg=Math.round(p*360);return `<div class="donut" style="--deg:${deg}deg"><span>${pct(p*100)}</span></div>`}
 function lineChart(items,label="Requests"){if(!items?.length)return `<div class="chart-empty">No requests recorded yet.</div>`;const w=760,h=220,p=24,max=Math.max(...items.map(x=>Number(x.v||0)),1);const pts=items.map((x,i)=>`${p+i*(w-2*p)/Math.max(items.length-1,1)},${h-p-(Number(x.v||0)/max)*(h-2*p)}`).join(" ");const last=items[items.length-1];return `<div class="chart-wrap"><svg class="line-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)} trend"><line x1="24" y1="196" x2="736" y2="196"/><polyline points="${pts}" fill="none"/><circle cx="${p+(items.length-1)*(w-2*p)/Math.max(items.length-1,1)}" cy="${h-p-(Number(last.v||0)/max)*(h-2*p)}" r="4"/><text x="24" y="214">${esc(label)}</text><text x="650" y="24">${esc(num(last.v))}</text></svg></div>`}
@@ -183,7 +193,12 @@ function metricsFromHistory(items){const records=items||[];const failed=records.
 async function dashboard(){
  const root=document.getElementById("page-root");root.innerHTML=`<div class="loading">Loading dashboard…</div>`;
  try{
-  const [d,r,p,s]=await Promise.all([api("/api/dashboard"),api("/api/history?limit=100"),api("/api/providers"),api("/api/system",{timeoutMs:2500}).catch(()=>state.system||{})]);state.dashboard=d;state.requests=r.items||[];state.providers=p;state.system=s;const charts=historyCharts(state.requests);
+   let [d,r,p,s]=await Promise.all([
+    api("/api/dashboard",{timeoutMs:8000}).catch(()=>({})),
+    api("/api/history?limit=100",{timeoutMs:8000}).catch(()=>({items:[]})),
+    api("/api/providers",{timeoutMs:8000}).catch(()=>({active:{},providers:[]})),
+    state.user?.is_admin?api("/api/system",{timeoutMs:2500}).catch(()=>state.system||{}):Promise.resolve(state.system||{})
+   ]);state.dashboard=d;state.requests=r.items||[];state.providers=p;state.system=s.gateway?s:{gateway:d.gateway||{},redis:d.redis||{},embedding:{},runtime:{}};s=state.system;const charts=historyCharts(state.requests);
   const historyTotal=state.requests.length;const historyHits=state.requests.filter(x=>Boolean(x.cache_hit)).length;const historyMisses=Math.max(0,historyTotal-historyHits);const historyTokens=state.requests.reduce((sum,x)=>sum+Number(x.total_tokens||x.consumed_tokens||0),0);const historyCost=state.requests.reduce((sum,x)=>sum+Number(x.cost||0),0);const req={...(d.requests||{}),total:Math.max(Number(d.requests?.total||0),historyTotal)};const cache={...(d.cache||{}),hits:Math.max(Number(d.cache?.hits||0),historyHits),misses:Math.max(Number(d.cache?.misses||0),historyMisses),hit_rate:historyTotal?Math.max(Number(d.cache?.hit_rate||0),historyHits/historyTotal*100):Number(d.cache?.hit_rate||0)};const usage={...(d.usage||{}),total_tokens:Math.max(Number(d.usage?.total_tokens||0),historyTokens),total_cost:Math.max(Number(d.usage?.total_cost||0),historyCost)};const prov=d.provider||p.active||{};
   cache.semantic_hits=Math.max(Number(cache.semantic_hits||0),state.requests.filter(x=>x.cache_hit&&String(x.cache_type||"").toLowerCase().includes("semantic")).length);cache.exact_hits=Math.max(Number(cache.exact_hits||0),state.requests.filter(x=>x.cache_hit&&String(x.cache_type||"").toLowerCase().includes("exact")).length);const recent=state.requests.slice(0,8).map(x=>`<tr><td class="mono">${esc(short(x.request_id||x.id||"-",18))}</td><td>${esc(short(x.question||"-",65))}</td><td>${statusBadge(x.cache_hit?"Hit":"Miss")}</td><td>${esc(x.cache_type||"-")}</td><td>${esc(x.status||"-")}</td></tr>`);
   const providers=(p.providers||[]).map(x=>`<div class="provider-row"><div class="provider-mark">${esc(x.name.slice(0,2).toUpperCase())}</div><div><strong>${esc(x.name)}</strong><span>${esc(x.model||"-")}</span></div><div class="provider-state">${statusBadge(x.active?"Active":x.status||"-")}</div></div>`).join("");

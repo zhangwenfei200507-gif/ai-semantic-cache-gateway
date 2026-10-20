@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,12 @@ from app.db.postgres import direct_connection
 
 SCHEMA_VERSION = 3
 SCHEMA_NAME = "003_private_image_assets"
+
+# Schema validation is immutable for the lifetime of one application process.
+# Re-checking it for every authenticated request creates a fresh PostgreSQL
+# connection during Railway cold starts and makes concurrent page loads queue.
+_schema_verified = False
+_schema_lock = threading.Lock()
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -244,6 +251,7 @@ def _now() -> str:
 
 
 def apply_schema(database_url: str, *, dry_run: bool = False) -> dict[str, Any]:
+    global _schema_verified
     checksum = schema_checksum()
     with direct_connection(database_url) as conn:
         if dry_run:
@@ -275,6 +283,8 @@ def apply_schema(database_url: str, *, dry_run: bool = False) -> dict[str, Any]:
                 (SCHEMA_VERSION, SCHEMA_NAME, checksum, _now()),
             )
         conn.commit()
+        with _schema_lock:
+            _schema_verified = True
         return {
             "version": SCHEMA_VERSION,
             "name": SCHEMA_NAME,
@@ -292,19 +302,29 @@ def _table_exists(conn, table: str) -> bool:
 
 
 def require_schema() -> None:
+    global _schema_verified
     from app.config.settings import settings
 
-    with direct_connection(str(settings.database_url)) as conn:
-        row = conn.execute(
-            "SELECT version, checksum FROM schema_migrations WHERE version = %s",
-            (SCHEMA_VERSION,),
-        ).fetchone()
-        if not row:
-            raise RuntimeError(
-                "PostgreSQL schema is not initialized; run the migration command before starting the app"
-            )
-        if row["checksum"] != schema_checksum():
-            raise RuntimeError("PostgreSQL schema checksum mismatch")
+    if _schema_verified:
+        return
+
+    with _schema_lock:
+        if _schema_verified:
+            return
+
+        with direct_connection(str(settings.database_url)) as conn:
+            row = conn.execute(
+                "SELECT version, checksum FROM schema_migrations WHERE version = %s",
+                (SCHEMA_VERSION,),
+            ).fetchone()
+            if not row:
+                raise RuntimeError(
+                    "PostgreSQL schema is not initialized; run the migration command before starting the app"
+                )
+            if row["checksum"] != schema_checksum():
+                raise RuntimeError("PostgreSQL schema checksum mismatch")
+
+        _schema_verified = True
 
 
 __all__ = [

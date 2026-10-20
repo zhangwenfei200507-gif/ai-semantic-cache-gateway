@@ -31,6 +31,25 @@ class _Connection:
 
 
 class VerificationEmailDeliveryTests(unittest.TestCase):
+    def test_resend_initializes_database_before_lookup(self):
+        from app.auth.router import resend_verification
+        from app.auth.schemas import ResendVerificationRequest
+
+        row = {"id": 18, "email": "user@example.com", "is_verified": True}
+
+        with (
+            patch("app.auth.router.enforce_rate_limit"),
+            patch("app.auth.router.init_db") as init_db,
+            patch("app.auth.database.get_connection", return_value=_Connection(row)),
+        ):
+            result = resend_verification(
+                ResendVerificationRequest(email="user@example.com"),
+                SimpleNamespace(),
+            )
+
+        init_db.assert_called_once()
+        self.assertIn("verification email", result["message"])
+
     def test_register_reports_delivery_failure_without_exposing_smtp_error(self):
         from app.auth.router import register_user
         from app.auth.schemas import RegisterRequest
@@ -72,6 +91,7 @@ class VerificationEmailDeliveryTests(unittest.TestCase):
 
         with (
             patch("app.auth.router.enforce_rate_limit"),
+            patch("app.auth.router.init_db"),
             patch("app.auth.database.get_connection", return_value=_Connection(row)),
             patch("app.auth.router.create_email_verification", return_value="token"),
             patch("app.auth.router._verification_url", return_value="https://example.test/verify"),
@@ -95,6 +115,7 @@ class VerificationEmailDeliveryTests(unittest.TestCase):
 
         with (
             patch("app.auth.router.enforce_rate_limit"),
+            patch("app.auth.router.init_db"),
             patch("app.auth.database.get_connection", return_value=_Connection(row)),
             patch("app.auth.router.create_email_verification", return_value="token"),
             patch("app.auth.router._verification_url", return_value="https://example.test/verify"),

@@ -276,7 +276,11 @@ def dashboard(user: dict = Depends(get_current_user)) -> dict[str, Any]:
 
     # Persisted history is the source of truth for a workspace dashboard.
     # Prometheus counters are process-local and reset after a restart.
-    records = history_repository.list(100000, user_id=str(user["id"]))
+    records = history_repository.list(
+        100000,
+        user_id=str(user["id"]),
+        workspace_id=user["workspace"]["id"],
+    )
     if records:
         request_total = len(records)
         error_total = sum(

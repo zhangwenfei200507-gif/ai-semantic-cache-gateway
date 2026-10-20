@@ -97,7 +97,7 @@ def _send_email(
         with smtplib.SMTP(
             settings.smtp_host,
             settings.smtp_port,
-            timeout=30,
+            timeout=int(settings.smtp_timeout_seconds),
         ) as server:
 
             server.starttls()
@@ -116,7 +116,7 @@ def _send_email(
         with smtplib.SMTP_SSL(
             settings.smtp_host,
             settings.smtp_port,
-            timeout=30,
+            timeout=int(settings.smtp_timeout_seconds),
         ) as server:
 
             server.login(
@@ -254,6 +254,7 @@ def resend_verification(
 ) -> dict:
 
     enforce_rate_limit(request, "auth-resend", settings.auth_rate_limit_per_minute)
+    init_db()
 
     user = None
 
@@ -310,8 +311,9 @@ def resend_verification(
             # Keep SMTP credentials and provider responses out of logs while making
             # delivery failures diagnosable in the deployment logs.
             logger.warning(
-                "Verification email delivery failed: error_type=%s smtp_code=%s",
+                "Verification email delivery failed: error_type=%s errno=%s smtp_code=%s",
                 type(exc).__name__,
+                getattr(exc, "errno", None),
                 getattr(exc, "smtp_code", None),
             )
             raise HTTPException(
