@@ -45,6 +45,10 @@ class CacheRepository:
 
             decode_responses=False,
 
+            # Railway Serverless treats TCP keepalive packets as outbound
+            # activity. Let idle connections go quiet and reconnect on demand.
+            socket_keepalive=False,
+
         )
 
 

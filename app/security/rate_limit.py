@@ -36,7 +36,11 @@ class GatewayRateLimiter:
 
     def _client(self):
         if self._redis is None:
-            self._redis = redis.from_url(settings.redis_url, decode_responses=True)
+            self._redis = redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_keepalive=False,
+            )
         return self._redis
 
     @staticmethod

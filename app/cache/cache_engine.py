@@ -89,6 +89,7 @@ class CacheEngine:
         self.client = redis.Redis.from_url(
             self.redis_url,
             decode_responses=False,
+            socket_keepalive=False,
         )
 
         self._ensure_index()
