@@ -61,8 +61,10 @@ POST `/api/auth/reset-password`
 
 ## 邮件与生产配置
 
-注册验证和密码重置通过 SMTP 发送链接；生产环境不会在响应中返回原始
-验证 Token 或密码重置 Token。请在部署环境中配置 SMTP 主机、端口、TLS、
-用户名、密码和发件人地址，并通过 `AUTH_FRONTEND_URL` 设置生产链接域名。
+注册验证和密码重置通过邮件服务发送链接；生产环境不会在响应中返回原始
+验证 Token 或密码重置 Token。默认本地开发使用 SMTP。若部署平台阻断 SMTP
+出站连接，可将 `EMAIL_PROVIDER` 设为 `resend`，并配置
+`RESEND_API_KEY` 与已验证的 `RESEND_FROM_EMAIL`，邮件会通过 HTTPS 发送。
+通过 `AUTH_FRONTEND_URL` 设置生产链接域名。
 
 生产环境还必须使用 PostgreSQL、启用 CSRF，并配置 `AUTH_SECRET_KEY`。
