@@ -1,0 +1,61 @@
+providers:
+
+  # ==========================================================
+  # DeepSeek
+  # ==========================================================
+
+  deepseek:
+    type: openai-compatible
+    base_url: https://api.deepseek.com
+    model: deepseek-chat
+    api_key_env: DEEPSEEK_API_KEY
+
+
+  # ==========================================================
+  # OpenAI
+  # ==========================================================
+
+  openai:
+    type: openai-compatible
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+
+
+  # ==========================================================
+  # Qwen Classifier
+  #
+  # Optional.
+  # ==========================================================
+
+  qwen_classifier:
+    type: openai-compatible
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen3.6-flash-2026-04-16
+    api_key_env: QWEN_CLASSIFIER_API_KEY
+
+
+  # ==========================================================
+  # Qwen Image
+  # ==========================================================
+
+  qwen_image:
+    type: qwen-image
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-image-3.0
+    api_key_env: QWEN_IMAGE_API_KEY
+
+
+  # ==========================================================
+  # Ollama
+  #
+  # Kept as configuration compatibility only.
+  # It is not automatically registered as a routing candidate
+  # until a corresponding provider implementation is enabled.
+  # ==========================================================
+
+  ollama:
+    type: local
+    base_url: http://localhost:11434
+    model: llama3
+    api_key_env: null

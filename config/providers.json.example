@@ -1,0 +1,37 @@
+{
+  "providers": [
+    {
+      "name": "my_provider",
+      "enabled": true,
+      "base_url": "https://your-provider.example.com/v1",
+      "api_key_env": "MY_PROVIDER_API_KEY",
+      "models": [
+        {
+          "name": "your-model",
+          "capabilities": [
+            "general",
+            "factual",
+            "reasoning",
+            "coding",
+            "analysis",
+            "creative",
+            "data"
+          ],
+          "reasoning_strength": 0.80,
+          "coding_strength": 0.80,
+          "analysis_strength": 0.80,
+          "factual_strength": 0.80,
+          "creative_strength": 0.80,
+          "data_strength": 0.80,
+          "chinese_strength": 0.80,
+          "multilingual_strength": 0.90,
+          "long_context_strength": 0.80,
+          "routing_role": "balanced",
+          "max_output_tokens": 8192,
+          "input_price_per_1m": 0.0,
+          "output_price_per_1m": 0.0
+        }
+      ]
+    }
+  ]
+}

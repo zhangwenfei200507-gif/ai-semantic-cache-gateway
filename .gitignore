@@ -1,0 +1,33 @@
+.venv/
+
+.env
+
+config/.env
+config/*.db
+data/*.db
+data/media/
+data/image_assets.db
+config/runtime_settings.json
+config/providers.json
+*.sqlite
+*.sqlite3
+
+__pycache__/
+
+*.pyc
+
+# Local verification artifacts may contain account names and generated images.
+test-results/
+ui/
+data/routing/
+
+# Local model and build caches.
+.cache/
+.hf_cache/
+models/
+
+# Local IDE and OS files.
+.vscode/
+.idea/
+*.log
+Thumbs.db
