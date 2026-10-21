@@ -149,6 +149,18 @@
   line-height: 1.6;
 }
 
+.dashboard-empty-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 700px) {
+  .dashboard-empty-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 700px) {
   .getting-started {
     padding: 24px 18px 20px;
