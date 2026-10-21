@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.dashboard import router as dashboard_router
+from app.api.admin_console import router as admin_console_router
 from app.api.history import router as history_router
 from app.api.images import router as images_router
 from app.api.management import router as management_router
@@ -190,6 +191,10 @@ def create_app() -> FastAPI:
 
     app.include_router(
         management_router
+    )
+
+    app.include_router(
+        admin_console_router
     )
 
     # ========================================================

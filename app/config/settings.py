@@ -348,6 +348,11 @@ class Settings(BaseSettings):
 
     auth_secret_key: str | None = None
 
+    # Immutable server-side administrator binding. This is intentionally an
+    # integer user id rather than an email so a user cannot change their
+    # address and inherit platform privileges.
+    admin_user_id: int | None = None
+
     admin_email: str | None = None
 
     auth_frontend_url: str = (
@@ -556,12 +561,7 @@ class Settings(BaseSettings):
     def is_admin_configured(
         self,
     ) -> bool:
-        return bool(
-            self.admin_email
-            and str(
-                self.admin_email
-            ).strip()
-        )
+        return self.admin_user_id is not None and int(self.admin_user_id) > 0
 
     # ======================================================
     # SMTP helper

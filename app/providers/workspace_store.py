@@ -132,6 +132,12 @@ class WorkspaceProviderStore:
                     provider_credential = self._credential(conn, provider["id"])
                     credential = model_credential or provider_credential
                     model["credential_configured"] = bool(credential and credential.get("encrypted_api_key"))
+                    model["credential_verified"] = bool(
+                        credential
+                        and credential.get("encrypted_api_key")
+                        and credential.get("verified_at")
+                    )
+                    model["verified_at"] = credential.get("verified_at") if credential else None
                     safe_models.append(model)
                     if credential:
                         credentials.append(credential)
@@ -139,6 +145,10 @@ class WorkspaceProviderStore:
                 has_credential = bool(provider_credential and provider_credential.get("encrypted_api_key")) or any(
                     item["credential_configured"] for item in safe_models
                 )
+                verified_credentials = [
+                    item for item in credentials
+                    if item.get("encrypted_api_key") and item.get("verified_at")
+                ]
                 result.append({
                     "id": provider["id"],
                     "name": provider["name"],
@@ -148,6 +158,11 @@ class WorkspaceProviderStore:
                     "role": provider["role"],
                     "status": "configured" if has_credential else "not_configured",
                     "configured": has_credential,
+                    "verified": bool(verified_credentials),
+                    "verified_at": max(
+                        (item.get("verified_at") for item in verified_credentials),
+                        default=None,
+                    ),
                     "enabled": bool(provider["enabled"]),
                     "default_model": provider.get("default_model"),
                     "models": safe_models,

@@ -574,6 +574,86 @@ def providers(user: dict = Depends(get_current_user)) -> dict[str, Any]:
     }
 
 
+@router.get("/onboarding")
+def onboarding(user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """Return Workspace-backed onboarding progress for the current user."""
+    rows = _provider_rows(get_gateway(), user)
+    configured = [item for item in rows if item.get("configured")]
+    verified = [
+        item for item in configured
+        if item.get("verified", item.get("configured", False))
+    ]
+    history = history_repository.list(
+        1,
+        user_id=str(user["id"]),
+        workspace_id=user["workspace"]["id"],
+    )
+    has_first_request = bool(history)
+
+    if not configured:
+        state = "no_provider"
+        primary = {
+            "label": "Add Your First Provider",
+            "href": "/pages/providers.html?add=1",
+        }
+    elif not verified:
+        state = "needs_verification"
+        primary = {
+            "label": "Verify Provider Connection",
+            "href": "/pages/providers.html",
+        }
+    elif not has_first_request:
+        state = "ready_for_playground"
+        primary = {
+            "label": "Open Playground",
+            "href": "/pages/playground.html",
+        }
+    else:
+        state = "completed"
+        primary = {
+            "label": "Open Analytics",
+            "href": "/pages/metrics.html",
+        }
+
+    return {
+        "state": state,
+        "show_getting_started": state != "completed",
+        "workspace_id": user["workspace"]["id"],
+        "provider_count": len(rows),
+        "configured_provider_count": len(configured),
+        "verified_provider_count": len(verified),
+        "has_first_request": has_first_request,
+        "primary_action": primary,
+        "learn_href": "/pages/playground.html?tab=routing",
+        "steps": [
+            {
+                "id": "connect",
+                "title": "Connect Provider",
+                "description": "Add your Provider and verify the connection.",
+                "status": "completed" if verified else "current",
+                "href": "/pages/providers.html?add=1" if not verified else "/pages/providers.html",
+                "action": "Add Provider" if not configured else "Verify Connection",
+            },
+            {
+                "id": "playground",
+                "title": "Test in Playground",
+                "description": "Send your first request with your own key.",
+                "status": "completed" if has_first_request else "current" if verified else "locked",
+                "href": "/pages/playground.html",
+                "action": "Open Playground",
+            },
+            {
+                "id": "analytics",
+                "title": "Explore Analytics",
+                "description": "Review usage, latency and cache performance.",
+                "status": "current" if has_first_request else "locked",
+                "href": "/pages/metrics.html",
+                "action": "View Analytics",
+            },
+        ],
+    }
+
+
 @router.post("/providers")
 def add_provider(payload: ProviderConfigRequest, user: dict = Depends(get_current_user)) -> dict[str, Any]:
     name = payload.name.strip().lower()

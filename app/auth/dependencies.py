@@ -17,6 +17,7 @@ from .security import (
 )
 
 from .service import get_user
+from app.config.settings import settings
 
 
 bearer = HTTPBearer(
@@ -88,7 +89,16 @@ def get_current_admin(
     ),
 ) -> dict:
 
-    if not user["is_admin"]:
+    configured_admin_id = settings.admin_user_id
+    if configured_admin_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access is not configured",
+        )
+
+    # The deployment setting narrows access to one immutable database user;
+    # the database flag remains the authoritative authorization record.
+    if int(user["id"]) != int(configured_admin_id) or not user["is_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator access required",
