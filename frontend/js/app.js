@@ -108,7 +108,7 @@ async function api(path,options={}){
       if(!explicitToken) clearToken();
       if(
         allowAuthRedirect &&
-        !["login","register","forgot-password","reset-password","verify-email"].includes(page())
+        page()!=="login"
       ){
         location.href="/pages/login.html";
       }
@@ -339,62 +339,13 @@ function renderBatch(root){root.innerHTML=pgShell(card("Batch Test",`<label>Requ
 async function runBatch(){const lines=document.getElementById("batch-input").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);if(!lines.length)return toast("Enter at least one request","error");const out=document.getElementById("batch-results");out.innerHTML=`<div class="loading">Running ${lines.length} requests…</div>`;const results=[];for(const text of lines){try{const d=await api("/api/playground",{method:"POST",body:JSON.stringify({model:"auto",messages:[{role:"user",content:text}],user:state.user?.email||null}),timeoutMs:120000});const r=d.response||d;results.push({text,ok:true,result:r})}catch(e){results.push({text,ok:false,error:e.message})}out.innerHTML=results.map(x=>`<div class="batch-row"><div><strong>${esc(short(x.text,100))}</strong><span>${x.ok?esc(x.result.cache_type|| (x.result.cache_hit?"Hit":"Completed")):esc(x.error)}</span></div>${statusBadge(x.ok?"OK":"Error")}</div>`).join("")}}
 
 function authPage(kind){
+ if(kind!=="login")return;
  const root=document.getElementById("auth-root");
- if(kind==="login"){root.innerHTML=`<div class="auth-shell"><div class="auth-card"><div class="brand centered"><div class="brand-icon">AI</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong><span>v2.0.0</span></div></div><h1>Welcome back</h1><p>Sign in to your gateway dashboard.</p><form id="auth-form"><label>Email<input id="email" type="email" required autocomplete="email"></label><label>Password<input id="password" type="password" required autocomplete="current-password"></label><label class="check"><input id="remember" type="checkbox"> Keep me signed in</label><button class="btn primary full" type="submit">Login</button></form><div id="auth-error"></div><div class="auth-links"><a href="/pages/register.html">Create account</a><a href="/pages/forgot-password.html">Forgot password?</a></div></div></div>`;document.getElementById("auth-form").onsubmit=async e=>{e.preventDefault();const er=document.getElementById("auth-error");er.textContent="Signing in…";er.className="auth-info";try{
- const d=await api("/api/auth/login",{method:"POST",body:JSON.stringify({
-   email:document.getElementById("email").value.trim(),
-   password:document.getElementById("password").value
- })});
- saveToken(d.access_token,document.getElementById("remember").checked);
- er.textContent="Checking your session…";
- const verified=await api("/api/auth/me",{allowAuthRedirect:false});
- state.user=verified;
- location.replace("/");
-}catch(x){
- clearToken();
- er.textContent=x.message;
- er.className="auth-error";
-}
-};return}
- if(kind==="register"){root.innerHTML=`<div class="auth-shell"><div class="auth-card"><div class="brand centered"><div class="brand-icon">AI</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong><span>v2.0.0</span></div></div><h1>Create account</h1><p>Create an account with your email and password.</p><form id="auth-form"><label>Email<input id="email" type="email" required autocomplete="email"></label><label>Password<input id="password" type="password" required minlength="8" autocomplete="new-password"></label><label>Confirm password<input id="confirm" type="password" required minlength="8" autocomplete="new-password"></label><button class="btn primary full" type="submit">Register</button></form><div id="auth-error"></div><div class="auth-links"><a href="/pages/login.html">Back to login</a></div></div></div>`;document.getElementById("auth-form").onsubmit=async e=>{e.preventDefault();const er=document.getElementById("auth-error"),emailInput=document.getElementById("email"),passwordInput=document.getElementById("password"),confirmInput=document.getElementById("confirm"),submit=e.currentTarget.querySelector("button[type=submit]");if(passwordInput.value!==confirmInput.value){er.textContent="Passwords do not match";er.className="auth-error";return}submit.disabled=true;submit.textContent="Creating account…";er.textContent="Creating account and sending verification email…";er.className="auth-info";try{await api("/api/auth/register",{method:"POST",timeoutMs:45000,body:JSON.stringify({email:emailInput.value.trim(),password:passwordInput.value})});er.textContent="Account created. If the current backend requires verification, complete it before logging in.";er.className="auth-success"}catch(x){er.textContent=x.message;er.className="auth-error"}finally{submit.disabled=false;submit.textContent="Register"}};return}
- if(kind==="forgot-password"){root.innerHTML=`<div class="auth-shell"><div class="auth-card"><h1>Forgot password</h1><p>Enter your account email and the backend will send a reset email when configured.</p><form id="auth-form"><label>Email<input id="email" type="email" required></label><button class="btn primary full" type="submit">Send reset email</button></form><div id="auth-error"></div><div class="auth-links"><a href="/pages/login.html">Back to login</a></div></div></div>`;document.getElementById("auth-form").onsubmit=async e=>{e.preventDefault();const submit=e.currentTarget.querySelector("button[type=submit]"),error=document.getElementById("auth-error");submit.disabled=true;submit.textContent="Sending…";error.textContent="Sending password reset email…";error.className="auth-info";try{const d=await api("/api/auth/forgot-password",{method:"POST",timeoutMs:45000,body:JSON.stringify({email:email.value})});error.textContent=d.message;error.className="auth-success"}catch(x){error.textContent=x.message;error.className="auth-error"}finally{submit.disabled=false;submit.textContent="Send reset email"}};return}
- if(kind==="reset-password"){const token=new URLSearchParams(location.search).get("token")||"";root.innerHTML=`<div class="auth-shell"><div class="auth-card"><h1>Reset password</h1><p>Enter a new password for your account.</p><form id="auth-form"><label>New password<input id="password" type="password" minlength="8" required></label><label>Confirm password<input id="confirm" type="password" minlength="8" required></label><button class="btn primary full" type="submit">Reset password</button></form><div id="auth-error"></div></div></div>`;document.getElementById("auth-form").onsubmit=async e=>{e.preventDefault();const passwordInput=document.getElementById("password"),confirmInput=document.getElementById("confirm");if(passwordInput.value!==confirmInput.value){authError("Passwords do not match");return}try{const d=await api("/api/auth/reset-password",{method:"POST",body:JSON.stringify({token,new_password:passwordInput.value})});authSuccess(d.message);setTimeout(()=>location.href="/pages/login.html",1200)}catch(x){authError(x.message)}};function authError(x){const e=document.getElementById("auth-error");e.textContent=x;e.className="auth-error"}function authSuccess(x){const e=document.getElementById("auth-error");e.textContent=x;e.className="auth-success"}return}
- if(kind==="verify-email"){const token=new URLSearchParams(location.search).get("token")||"";root.innerHTML=`<div class="auth-shell"><div class="auth-card"><h1>Verify email</h1><p>Verifying your account…</p><div id="auth-error"></div></div></div>`;if(!token){document.getElementById("auth-error").textContent="Verification token is missing.";return}api("/api/auth/verify-email",{method:"POST",body:JSON.stringify({token})}).then(()=>{document.getElementById("auth-error").textContent="Email verified successfully. You can now log in.";document.getElementById("auth-error").className="auth-success"}).catch(x=>{document.getElementById("auth-error").textContent=x.message;document.getElementById("auth-error").className="auth-error"})}
+ const query=new URLSearchParams(location.search);
+ const oauthError=query.get("oauth_error");
+ const message=oauthError==="oauth_cancelled"?"Sign-in was cancelled.":oauthError?"Sign-in could not be completed. Please try again.":"";
+ root.innerHTML=`<div class="auth-shell"><div class="auth-card"><div class="brand centered"><div class="brand-icon">AI</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong><span>v2.0.0</span></div></div><h1>Welcome back</h1><p>Sign in securely with your existing account.</p><div class="oauth-actions" style="display:grid;gap:10px;margin-top:8px"><a class="btn primary full oauth-btn github" style="display:block;text-align:center;text-decoration:none" href="/api/auth/oauth/github/start">Continue with GitHub</a><a class="btn full oauth-btn google" style="display:block;text-align:center;text-decoration:none" href="/api/auth/oauth/google/start">Continue with Google</a></div><div class="auth-divider" style="margin-top:18px;text-align:center;color:var(--muted);font-size:11px"><span>OAuth keeps your account and Workspace together</span></div><div id="auth-error" class="${message?"auth-error":"auth-info"}" ${message?"":"style=\"display:none\""}>${esc(message)}</div></div></div>`;
 }
 
-function addVerificationHelp(){
- if(page()!=="login")return;
- const links=document.querySelector(".auth-links");
- if(!links||document.getElementById("resend-verification"))return;
- const button=document.createElement("button");
- button.id="resend-verification";
- button.className="auth-link-button";
- button.type="button";
- button.textContent="Resend verification email";
- button.onclick=async()=>{
-   const email=document.getElementById("email")?.value.trim();
-   if(!email)return toast("Enter your email first","error");
-   const error=document.getElementById("auth-error");
-   const originalLabel=button.textContent;
-   button.disabled=true;
-   button.textContent="Sending…";
-   error.textContent="Sending verification email…";
-   error.className="auth-info";
-   try{
-     const result=await api("/api/auth/resend-verification",{method:"POST",timeoutMs:45000,allowAuthRedirect:false,body:JSON.stringify({email})});
-     error.textContent=result.message||"If verification is required, a new email has been sent.";
-     error.className="auth-success";
-   }catch(error){
-     const message=document.getElementById("auth-error");
-     message.textContent=error.message;
-     message.className="auth-error";
-   }finally{
-     button.disabled=false;
-     button.textContent=originalLabel;
-   }
- };
- links.appendChild(button);
-}
-
-async function init(){const p=page();ensureDesignSystem();if(["login","register","forgot-password","reset-password","verify-email"].includes(p)){if(p!=="reset-password"&&p!=="verify-email"&&tokenStore()){try{await api("/api/auth/me");location.href="/";return}catch{}}authPage(p);if(p==="login")addVerificationHelp();return}if(!tokenStore()){location.href="/pages/login.html";return}shell();const fn={dashboard,playground:playgroundPage,cache:cachePage,requests:requestsPage,providers:providersPage,metrics:metricsPage,system:systemPage,settings:settingsPage}[p]||dashboard;await loadIdentity();void loadStatus();await fn()}
+async function init(){const p=page();ensureDesignSystem();if(p==="login"){try{await api("/api/auth/me",{allowAuthRedirect:false});location.replace("/");return}catch{}authPage("login");return}if(!tokenStore()){try{await api("/api/auth/me",{allowAuthRedirect:false})}catch{location.href="/pages/login.html";return}}shell();const fn={dashboard,playground:playgroundPage,cache:cachePage,requests:requestsPage,providers:providersPage,metrics:metricsPage,system:systemPage,settings:settingsPage}[p]||dashboard;await loadIdentity();void loadStatus();await fn()}
 window.addEventListener("DOMContentLoaded",init);

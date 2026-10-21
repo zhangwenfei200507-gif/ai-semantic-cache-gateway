@@ -8,10 +8,11 @@ expected by app/api/server.py:
 The backend file app/api/server.py uses:
   FRONTEND_DIR = BASE_DIR / "frontend"
 
-No app/*.py files were changed for the UI integration.
+The authentication UI uses the backend OAuth routes described below.
 
 Authentication:
-  POST /api/auth/login
+  GET  /api/auth/oauth/github/start
+  GET  /api/auth/oauth/google/start
   GET  /api/auth/me
   POST /api/auth/logout
 

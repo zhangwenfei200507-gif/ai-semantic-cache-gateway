@@ -79,12 +79,6 @@ def get_current_user(
             detail="User inactive",
         )
 
-    if not user["is_verified"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email address has not been verified",
-        )
-
     return user
 
 

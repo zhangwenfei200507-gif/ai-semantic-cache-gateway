@@ -1,53 +1,27 @@
 from __future__ import annotations
 
-import hashlib
+from datetime import datetime, timezone
 
-from datetime import (
-    datetime,
-    timedelta,
-    timezone,
-)
-
-from .database import (
-    get_connection,
-    init_db,
-)
-
-from .security import (
-    create_reset_token,
-    create_verification_token,
-    hash_password,
-    verify_password,
-)
-from app.workspace.service import ensure_personal_workspace
 from app.db.postgres import postgres_configured
+from app.workspace.service import ensure_personal_workspace
+
+from .database import get_connection, init_db
 
 
 def _now() -> str:
-
-    return datetime.now(
-        timezone.utc
-    ).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _user(row):
-
+def _user(row) -> dict | None:
     if row is None:
         return None
 
     user = {
         "id": row["id"],
         "email": row["email"],
-        "password_hash": row["password_hash"],
-        "is_active": bool(
-            row["is_active"]
-        ),
-        "is_verified": bool(
-            row["is_verified"]
-        ),
-        "is_admin": bool(
-            row["is_admin"]
-        ),
+        "is_active": bool(row["is_active"]),
+        "is_verified": True,
+        "is_admin": bool(row["is_admin"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -55,395 +29,135 @@ def _user(row):
     return user
 
 
-def register(
-    email: str,
-    password: str,
-    admin_email: str | None = None,
-) -> dict:
-
+def get_user(user_id: int) -> dict | None:
     init_db()
-
-    email = email.strip().lower()
-
-    now = _now()
-
-    is_admin = bool(
-        admin_email
-        and email == admin_email.strip().lower()
-    )
-
     with get_connection() as conn:
-
-        existing = conn.execute(
-            """
-            SELECT id
-            FROM users
-            WHERE email = ?
-            """,
-            (email,),
+        row = conn.execute(
+            "SELECT * FROM users WHERE id = ?",
+            (int(user_id),),
         ).fetchone()
+        if row is not None:
+            oauth_account = conn.execute(
+                "SELECT 1 FROM oauth_accounts WHERE user_id = ? LIMIT 1",
+                (int(user_id),),
+            ).fetchone()
+            if oauth_account is None:
+                return None
+    return _user(row)
 
-        if existing:
-            raise ValueError(
-                "Email already registered"
-            )
 
-        insert_sql = """
+def _insert_user(conn, email: str, now: str) -> dict:
+    if postgres_configured():
+        row = conn.execute(
+            """
             INSERT INTO users
                 (email, password_hash, is_active, is_verified, is_admin, created_at, updated_at)
-            VALUES (?, ?, 1, 0, ?, ?, ?)
+            VALUES (?, NULL, TRUE, TRUE, FALSE, ?, ?)
+            RETURNING *
+            """,
+            (email, now, now),
+        ).fetchone()
+        return row
+
+    cur = conn.execute(
         """
-        if postgres_configured():
-            cur = conn.execute(
-                insert_sql.replace("1, 0", "TRUE, FALSE") + " RETURNING id",
-                (email, hash_password(password), bool(is_admin), now, now),
+        INSERT INTO users
+            (email, password_hash, is_active, is_verified, is_admin, created_at, updated_at)
+        VALUES (?, '', 1, 1, 0, ?, ?)
+        """,
+        (email, now, now),
+    )
+    return conn.execute(
+        "SELECT * FROM users WHERE id = ?",
+        (cur.lastrowid,),
+    ).fetchone()
+
+
+def authenticate_oauth(
+    provider: str,
+    provider_subject: str,
+    email: str,
+    email_verified: bool,
+) -> dict:
+    """Link a verified OAuth identity to an existing user or create one."""
+
+    if not email_verified:
+        raise ValueError("The identity provider did not verify this email address")
+
+    provider = str(provider).strip().lower()
+    provider_subject = str(provider_subject).strip()
+    email = str(email).strip().lower()
+    if provider not in {"github", "google"} or not provider_subject or not email:
+        raise ValueError("Invalid OAuth identity")
+
+    init_db()
+    now = _now()
+    with get_connection() as conn:
+        linked = conn.execute(
+            """
+            SELECT u.*
+            FROM oauth_accounts a
+            JOIN users u ON u.id = a.user_id
+            WHERE a.provider = ? AND a.provider_subject = ?
+            """,
+            (provider, provider_subject),
+        ).fetchone()
+
+        if linked is None:
+            existing = conn.execute(
+                "SELECT * FROM users WHERE LOWER(email) = LOWER(?)",
+                (email,),
+            ).fetchone()
+            if existing is None:
+                user = _insert_user(conn, email, now)
+                user_id = int(user["id"])
+            else:
+                user_id = int(existing["id"])
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET email = ?, is_active = TRUE, is_verified = TRUE, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (email, now, user_id),
+                )
+
+            conn.execute(
+                """
+                INSERT INTO oauth_accounts
+                    (user_id, provider, provider_subject, email, email_verified, created_at, last_login_at)
+                VALUES (?, ?, ?, ?, TRUE, ?, ?)
+                """,
+                (user_id, provider, provider_subject, email, now, now),
             )
-            user_id = cur.fetchone()["id"]
+            linked = conn.execute(
+                "SELECT * FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
         else:
-            cur = conn.execute(insert_sql, (email, hash_password(password), int(is_admin), now, now))
-            user_id = cur.lastrowid
-
-        row = conn.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-
-    return _user(row)
-
-
-def authenticate(
-    email: str,
-    password: str,
-) -> dict | None:
-
-    init_db()
-
-    email = email.strip().lower()
-
-    with get_connection() as conn:
-
-        row = conn.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE email = ?
-            """,
-            (email,),
-        ).fetchone()
-
-    user = _user(row)
-
-    if not user:
-        return None
-
-    if not user["is_active"]:
-        return None
-
-    if not user["is_verified"]:
-        raise ValueError(
-            "Email address has not been verified"
-        )
-
-    if not verify_password(
-        password,
-        user["password_hash"],
-    ):
-        return None
-
-    return user
-
-
-def get_user(
-    user_id: int,
-) -> dict | None:
-
-    init_db()
-
-    with get_connection() as conn:
-
-        row = conn.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-
-    return _user(row)
-
-
-def create_email_verification(
-    user_id: int,
-    expires_minutes: int = 30,
-) -> str:
-
-    init_db()
-
-    raw_token, token_hash = (
-        create_verification_token()
-    )
-
-    now = datetime.now(
-        timezone.utc
-    )
-
-    expires = (
-        now
-        + timedelta(
-            minutes=expires_minutes
-        )
-    )
-
-    with get_connection() as conn:
-
-        conn.execute(
-            """
-            UPDATE email_verification_tokens
-            SET used = TRUE
-            WHERE user_id = ?
-              AND used = FALSE
-            """,
-            (user_id,),
-        )
-
-        conn.execute(
-            """
-            INSERT INTO email_verification_tokens
-                (
-                    user_id,
-                    token_hash,
-                    expires_at,
-                    used,
-                    created_at
-                )
-            VALUES (?, ?, ?, FALSE, ?)
-            """,
-            (
-                user_id,
-                token_hash,
-                expires.isoformat(),
-                now.isoformat(),
-            ),
-        )
-
-    return raw_token
-
-
-def verify_email(
-    token: str,
-) -> bool:
-
-    init_db()
-
-    token_hash = hashlib.sha256(
-        token.encode("utf-8")
-    ).hexdigest()
-
-    now = datetime.now(
-        timezone.utc
-    )
-
-    with get_connection() as conn:
-
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                user_id,
-                expires_at,
-                used
-            FROM email_verification_tokens
-            WHERE token_hash = ?
-            """,
-            (token_hash,),
-        ).fetchone()
-
-        if not row:
-            return False
-
-        if row["used"]:
-            return False
-
-        try:
-            expires = datetime.fromisoformat(
-                row["expires_at"]
+            conn.execute(
+                """
+                UPDATE oauth_accounts
+                SET email = ?, email_verified = TRUE, last_login_at = ?
+                WHERE provider = ? AND provider_subject = ?
+                """,
+                (email, now, provider, provider_subject),
             )
-        except ValueError:
-            return False
-
-        if expires <= now:
-            return False
-
-        conn.execute(
-            """
-            UPDATE users
-            SET
-                is_verified = TRUE,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                now.isoformat(),
-                row["user_id"],
-            ),
-        )
-
-        conn.execute(
-            """
-            UPDATE email_verification_tokens
-            SET used = TRUE
-            WHERE id = ?
-            """,
-            (row["id"],),
-        )
-
-    return True
-
-
-def create_password_reset(
-    email: str,
-    expires_minutes: int = 30,
-) -> str | None:
-
-    init_db()
-
-    email = email.strip().lower()
-
-    with get_connection() as conn:
-
-        row = conn.execute(
-            """
-            SELECT id
-            FROM users
-            WHERE email = ?
-            """,
-            (email,),
-        ).fetchone()
-
-        if not row:
-            return None
-
-        raw_token, token_hash = (
-            create_reset_token()
-        )
-
-        now = datetime.now(
-            timezone.utc
-        )
-
-        expires = (
-            now
-            + timedelta(
-                minutes=expires_minutes
+            conn.execute(
+                "UPDATE users SET email = ?, is_verified = TRUE, updated_at = ? WHERE id = ?",
+                (email, now, int(linked["id"])),
             )
-        )
+            linked = conn.execute(
+                "SELECT * FROM users WHERE id = ?",
+                (int(linked["id"]),),
+            ).fetchone()
 
-        conn.execute(
-            """
-            UPDATE password_reset_tokens
-            SET used = TRUE
-            WHERE user_id = ?
-              AND used = FALSE
-            """,
-            (row["id"],),
-        )
+        conn.commit()
 
-        conn.execute(
-            """
-            INSERT INTO password_reset_tokens
-                (
-                    user_id,
-                    token_hash,
-                    expires_at,
-                    used,
-                    created_at
-                )
-            VALUES (?, ?, ?, FALSE, ?)
-            """,
-            (
-                row["id"],
-                token_hash,
-                expires.isoformat(),
-                now.isoformat(),
-            ),
-        )
-
-    return raw_token
+    return _user(linked)
 
 
-def reset_password(
-    token: str,
-    new_password: str,
-) -> bool:
-
-    init_db()
-
-    token_hash = hashlib.sha256(
-        token.encode("utf-8")
-    ).hexdigest()
-
-    now = datetime.now(
-        timezone.utc
-    )
-
-    with get_connection() as conn:
-
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                user_id,
-                expires_at,
-                used
-            FROM password_reset_tokens
-            WHERE token_hash = ?
-            """,
-            (token_hash,),
-        ).fetchone()
-
-        if not row:
-            return False
-
-        if row["used"]:
-            return False
-
-        try:
-            expires = datetime.fromisoformat(
-                row["expires_at"]
-            )
-        except ValueError:
-            return False
-
-        if expires <= now:
-            return False
-
-        conn.execute(
-            """
-            UPDATE users
-            SET
-                password_hash = ?,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                hash_password(new_password),
-                now.isoformat(),
-                row["user_id"],
-            ),
-        )
-
-        conn.execute(
-            """
-            UPDATE password_reset_tokens
-            SET used = TRUE
-            WHERE id = ?
-            """,
-            (row["id"],),
-        )
-
-    return True
+__all__ = [
+    "authenticate_oauth",
+    "get_user",
+]

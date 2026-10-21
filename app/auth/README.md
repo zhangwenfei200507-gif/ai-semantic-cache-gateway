@@ -1,70 +1,45 @@
 # app/auth
 
-这是项目的用户认证模块，和现有的模型路由、缓存、Qwen3.8-Flash 分类逻辑分离。
+认证模块与模型路由、缓存和分类逻辑分离，当前只支持 GitHub OAuth 和
+Google OAuth。OAuth 身份会绑定到已有用户，已有 Workspace、请求历史、缓存
+和 Provider 元数据不会因为切换登录方式而丢失。
 
-## 包含
+## 登录流程
 
-- 邮箱 + 密码注册
-- 邮箱 + 密码登录
-- 当前用户 `/api/auth/me`
-- 忘记密码
-- 密码重置
-- PBKDF2-SHA256 密码哈希
-- HMAC-SHA256 Bearer Token
-- SQLite 本地开发 / PostgreSQL 生产数据库
+- `GET /api/auth/oauth/github/start`
+- `GET /api/auth/oauth/github/callback`
+- `GET /api/auth/oauth/google/start`
+- `GET /api/auth/oauth/google/callback`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
 
-这里的“Google邮箱”指可以使用 Gmail 地址注册/登录，并不等于 Google OAuth 登录。
-
-## 接入
-
-在 `app/api/server.py` 增加：
-
-```python
-from app.auth import router as auth_router
-```
-
-然后在 `create_app()` 中，在 frontend mount 之前增加：
-
-```python
-app.include_router(auth_router)
-```
+OAuth 回调只接受经过提供商验证的邮箱。首次登录时，如果邮箱已经存在，系统会
+将 OAuth 身份关联到原用户；否则创建一个新的用户和 Personal Workspace。
 
 ## 配置
 
-建议在 `app/config/settings.py` 增加：
-
-```python
-auth_secret_key: str | None = None
-```
-
-并在 `.env` 设置：
+生产环境需要在服务端私有环境变量中配置：
 
 ```env
-AUTH_SECRET_KEY=换成一串随机长字符串
+AUTH_SECRET_KEY=<random-secret>
+GITHUB_OAUTH_CLIENT_ID=<github-client-id>
+GITHUB_OAUTH_CLIENT_SECRET=<github-client-secret>
+GOOGLE_OAUTH_CLIENT_ID=<google-client-id>
+GOOGLE_OAUTH_CLIENT_SECRET=<google-client-secret>
+AUTH_FRONTEND_URL=https://<public-origin>
 ```
 
-不要把真实 SECRET KEY 提交到 GitHub。
+GitHub 和 Google 应用的回调地址分别是：
 
-## API
+```text
+https://<public-origin>/api/auth/oauth/github/callback
+https://<public-origin>/api/auth/oauth/google/callback
+```
 
-POST `/api/auth/register`
+真实 Client Secret 和 `AUTH_SECRET_KEY` 不能提交到 GitHub，也不能返回给前端。
 
-POST `/api/auth/login`
+## 数据迁移
 
-GET `/api/auth/me`，Header：
-
-`Authorization: Bearer <access_token>`
-
-POST `/api/auth/forgot-password`
-
-POST `/api/auth/reset-password`
-
-## 邮件与生产配置
-
-注册验证和密码重置通过邮件服务发送链接；生产环境不会在响应中返回原始
-验证 Token 或密码重置 Token。默认本地开发使用 SMTP。若部署平台阻断 SMTP
-出站连接，可将 `EMAIL_PROVIDER` 设为 `resend`，并配置
-`RESEND_API_KEY` 与已验证的 `RESEND_FROM_EMAIL`，邮件会通过 HTTPS 发送。
-通过 `AUTH_FRONTEND_URL` 设置生产链接域名。
-
-生产环境还必须使用 PostgreSQL、启用 CSRF，并配置 `AUTH_SECRET_KEY`。
+迁移版本 004 保留 `users`、Workspace 和业务历史，清除旧密码哈希并删除
+`email_verification_tokens`、`password_reset_tokens` 表；新增 `oauth_accounts`
+用于保存提供商身份映射。该迁移是幂等的，但会永久移除旧密码登录数据。

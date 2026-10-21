@@ -4,71 +4,9 @@ import base64
 import hashlib
 import hmac
 import json
-import secrets
 import time
 
 from app.config.settings import settings
-
-
-def hash_password(password: str) -> str:
-    """
-    PBKDF2 password hash.
-    """
-
-    salt = secrets.token_bytes(16)
-
-    iterations = 310_000
-
-    digest = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt,
-        iterations,
-    )
-
-    return (
-        f"pbkdf2_sha256${iterations}$"
-        f"{base64.urlsafe_b64encode(salt).decode()}"
-        f"${base64.urlsafe_b64encode(digest).decode()}"
-    )
-
-
-def verify_password(
-    password: str,
-    encoded: str,
-) -> bool:
-
-    try:
-
-        scheme, iterations, salt_b64, digest_b64 = (
-            encoded.split("$")
-        )
-
-        if scheme != "pbkdf2_sha256":
-            return False
-
-        salt = base64.urlsafe_b64decode(
-            salt_b64.encode()
-        )
-
-        expected = base64.urlsafe_b64decode(
-            digest_b64.encode()
-        )
-
-        actual = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            salt,
-            int(iterations),
-        )
-
-        return hmac.compare_digest(
-            actual,
-            expected,
-        )
-
-    except Exception:
-        return False
 
 
 def _b64(data: bytes) -> str:
@@ -203,22 +141,3 @@ def decode_access_token(
         raise ValueError(
             "Invalid or expired access token"
         ) from exc
-
-
-def create_secure_token() -> tuple[str, str]:
-
-    raw = secrets.token_urlsafe(48)
-
-    token_hash = hashlib.sha256(
-        raw.encode("utf-8")
-    ).hexdigest()
-
-    return raw, token_hash
-
-
-def create_reset_token() -> tuple[str, str]:
-    return create_secure_token()
-
-
-def create_verification_token() -> tuple[str, str]:
-    return create_secure_token()

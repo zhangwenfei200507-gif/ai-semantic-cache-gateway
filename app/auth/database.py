@@ -9,6 +9,16 @@ from app.db.postgres import get_postgres_connection, postgres_configured
 DB_PATH = BASE_DIR / "config" / "auth.db"
 
 
+class _SQLiteConnection(sqlite3.Connection):
+    """Close local SQLite connections when their context manager exits."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def get_connection():
     if postgres_configured():
         return get_postgres_connection()
@@ -21,6 +31,7 @@ def get_connection():
     conn = sqlite3.connect(
         str(DB_PATH),
         check_same_thread=False,
+        factory=_SQLiteConnection,
     )
 
     conn.row_factory = sqlite3.Row
@@ -57,9 +68,9 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                password_hash TEXT NOT NULL,
+                password_hash TEXT,
                 is_active INTEGER NOT NULL DEFAULT 1,
-                is_verified INTEGER NOT NULL DEFAULT 0,
+                is_verified INTEGER NOT NULL DEFAULT 1,
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -110,37 +121,23 @@ def init_db() -> None:
             )
 
         # ------------------------------------------------------
-        # Email verification tokens
+        # OAuth migration
         # ------------------------------------------------------
 
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS email_verification_tokens (
+            CREATE TABLE IF NOT EXISTS oauth_accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
-                token_hash TEXT NOT NULL UNIQUE,
-                expires_at TEXT NOT NULL,
-                used INTEGER NOT NULL DEFAULT 0,
+                provider TEXT NOT NULL,
+                provider_subject TEXT NOT NULL,
+                email TEXT NOT NULL,
+                email_verified INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-            """
-        )
-
-        # ------------------------------------------------------
-        # Password reset tokens
-        # ------------------------------------------------------
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                token_hash TEXT NOT NULL UNIQUE,
-                expires_at TEXT NOT NULL,
-                used INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                last_login_at TEXT NOT NULL,
+                UNIQUE(provider, provider_subject),
+                UNIQUE(provider, user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """
         )
@@ -165,16 +162,24 @@ def init_db() -> None:
 
         conn.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_verification_token_hash
-            ON email_verification_tokens(token_hash)
+            CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user
+            ON oauth_accounts(user_id)
             """
         )
 
         conn.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_reset_token_hash
-            ON password_reset_tokens(token_hash)
+            CREATE INDEX IF NOT EXISTS idx_oauth_accounts_email
+            ON oauth_accounts(email)
             """
+        )
+
+        # Retire the old password and email-token data while preserving the
+        # user rows that own Workspaces, history and provider configuration.
+        conn.execute("DROP TABLE IF EXISTS email_verification_tokens")
+        conn.execute("DROP TABLE IF EXISTS password_reset_tokens")
+        conn.execute(
+            "UPDATE users SET password_hash = '', is_verified = 1"
         )
 
         conn.commit()

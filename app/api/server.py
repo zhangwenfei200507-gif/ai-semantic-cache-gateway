@@ -48,11 +48,10 @@ def create_app() -> FastAPI:
 
         /v1/chat/completions
 
-        /api/auth/register
-        /api/auth/login
+        /api/auth/oauth/{provider}/start
+        /api/auth/oauth/{provider}/callback
         /api/auth/me
-        /api/auth/forgot-password
-        /api/auth/reset-password
+        /api/auth/logout
 
         /api/dashboard
         /api/cache
@@ -159,11 +158,10 @@ def create_app() -> FastAPI:
     # ========================================================
     # Authentication API
     #
-    #   POST /api/auth/register
-    #   POST /api/auth/login
+    #   GET  /api/auth/oauth/{provider}/start
+    #   GET  /api/auth/oauth/{provider}/callback
     #   GET  /api/auth/me
-    #   POST /api/auth/forgot-password
-    #   POST /api/auth/reset-password
+    #   POST /api/auth/logout
     # ========================================================
 
     app.include_router(

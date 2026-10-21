@@ -64,6 +64,21 @@ def sqlite_rows(path: Path, query: str) -> list[dict[str, Any]]:
         conn.close()
 
 
+def sqlite_table_rows(path: Path, table: str) -> list[dict[str, Any]]:
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if not exists:
+            return []
+        return [dict(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()]
+    finally:
+        conn.close()
+
+
 def inspect_sources(auth_path: Path, history_path: Path) -> dict[str, Any]:
     result: dict[str, Any] = {
         "auth_sha256": sha256(auth_path),
@@ -80,8 +95,8 @@ def inspect_sources(auth_path: Path, history_path: Path) -> dict[str, Any]:
 
     users = sqlite_rows(auth_path, "SELECT * FROM users ORDER BY id")
     workspaces = sqlite_rows(auth_path, "SELECT * FROM workspaces ORDER BY id")
-    verification = sqlite_rows(auth_path, "SELECT * FROM email_verification_tokens ORDER BY id")
-    resets = sqlite_rows(auth_path, "SELECT * FROM password_reset_tokens ORDER BY id")
+    verification = sqlite_table_rows(auth_path, "email_verification_tokens")
+    resets = sqlite_table_rows(auth_path, "password_reset_tokens")
     history = sqlite_rows(history_path, "SELECT * FROM gateway_history ORDER BY id")
     by_email = {str(row["email"]).strip().lower(): row for row in users}
     by_id = {str(row["id"]): row for row in users}
@@ -186,8 +201,8 @@ def migrate(database_url: str, auth_path: Path, history_path: Path, source: dict
     apply_schema(database_url)
     users = sqlite_rows(auth_path, "SELECT * FROM users ORDER BY id")
     workspaces = sqlite_rows(auth_path, "SELECT * FROM workspaces ORDER BY id")
-    verification = sqlite_rows(auth_path, "SELECT * FROM email_verification_tokens ORDER BY id")
-    resets = sqlite_rows(auth_path, "SELECT * FROM password_reset_tokens ORDER BY id")
+    verification = sqlite_table_rows(auth_path, "email_verification_tokens")
+    resets = sqlite_table_rows(auth_path, "password_reset_tokens")
     history = sqlite_rows(history_path, "SELECT * FROM gateway_history ORDER BY id")
     by_id = {str(row["id"]): row for row in users}
     by_email = {str(row["email"]).strip().lower(): row for row in users}
@@ -213,10 +228,10 @@ def migrate(database_url: str, auth_path: Path, history_path: Path, source: dict
                 conn.execute(
                     """
                     INSERT INTO users(id,email,password_hash,is_active,is_verified,is_admin,created_at,updated_at)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES(%s,%s,NULL,%s,TRUE,%s,%s,%s)
                     ON CONFLICT(id) DO NOTHING
                     """,
-                    (row["id"], row["email"], row["password_hash"], bool(row["is_active"]), bool(row["is_verified"]), bool(row["is_admin"]), row["created_at"], row["updated_at"]),
+                    (row["id"], row["email"], bool(row["is_active"]), bool(row["is_admin"]), row["created_at"], row["updated_at"]),
                 )
             for row in workspaces:
                 conn.execute(
@@ -234,24 +249,6 @@ def migrate(database_url: str, auth_path: Path, history_path: Path, source: dict
                     ON CONFLICT(workspace_id,user_id) DO NOTHING
                     """,
                     (row["id"], row["owner_user_id"], row["created_at"]),
-                )
-            for row in verification:
-                conn.execute(
-                    """
-                    INSERT INTO email_verification_tokens(id,user_id,token_hash,expires_at,used,created_at)
-                    VALUES(%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT(id) DO NOTHING
-                    """,
-                    (row["id"], row["user_id"], row["token_hash"], row["expires_at"], bool(row["used"]), row["created_at"]),
-                )
-            for row in resets:
-                conn.execute(
-                    """
-                    INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at,used,created_at)
-                    VALUES(%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT(id) DO NOTHING
-                    """,
-                    (row["id"], row["user_id"], row["token_hash"], row["expires_at"], bool(row["used"]), row["created_at"]),
                 )
             runtime = Jsonb(_load_runtime_settings())
             for workspace in workspaces:
@@ -298,7 +295,7 @@ def migrate(database_url: str, auth_path: Path, history_path: Path, source: dict
                         """,
                         (row["request_id"], raw_user_id or None, "empty_or_unmatched_user_id", now()),
                     )
-            for table, column in (("users", "id"), ("workspaces", "id"), ("email_verification_tokens", "id"), ("password_reset_tokens", "id"), ("providers", "id"), ("provider_models", "id"), ("provider_credentials", "id")):
+            for table, column in (("users", "id"), ("workspaces", "id"), ("providers", "id"), ("provider_models", "id"), ("provider_credentials", "id")):
                 conn.execute(
                     f"SELECT setval(pg_get_serial_sequence('{table}', '{column}'), COALESCE(MAX({column}), 1), MAX({column}) IS NOT NULL) FROM {table}"
                 )
@@ -324,8 +321,6 @@ def migrate(database_url: str, auth_path: Path, history_path: Path, source: dict
 def verify(database_url: str, auth_path: Path, history_path: Path) -> dict[str, Any]:
     source = inspect_sources(auth_path, history_path)
     source_workspaces = sqlite_rows(auth_path, "SELECT id,owner_user_id,name,kind,created_at,updated_at FROM workspaces ORDER BY id")
-    source_verification = sqlite_rows(auth_path, "SELECT id,user_id,token_hash,expires_at,used,created_at FROM email_verification_tokens ORDER BY id")
-    source_resets = sqlite_rows(auth_path, "SELECT id,user_id,token_hash,expires_at,used,created_at FROM password_reset_tokens ORDER BY id")
     source_history = sqlite_rows(history_path, "SELECT * FROM gateway_history ORDER BY id")
     with direct_connection(database_url) as conn:
         actual = {
@@ -352,13 +347,16 @@ def verify(database_url: str, auth_path: Path, history_path: Path) -> dict[str, 
         source_ids = {row["request_id"] for row in sqlite_rows(history_path, "SELECT request_id FROM gateway_history")}
         users = conn.execute("SELECT id,email,password_hash,is_active,is_verified,is_admin,created_at,updated_at FROM users ORDER BY id").fetchall()
         source_users = sqlite_rows(auth_path, "SELECT id,email,password_hash,is_active,is_verified,is_admin,created_at,updated_at FROM users ORDER BY id")
-        users_match = [dict(row) for row in users] == source_users
+        normalized_users = [dict(row) for row in users]
+        normalized_source_users = [dict(row) for row in source_users]
+        for row in normalized_users + normalized_source_users:
+            row["password_hash"] = None
+            row["is_verified"] = True
+        users_match = normalized_users == normalized_source_users
         workspaces = [dict(row) for row in conn.execute("SELECT id,owner_user_id,name,kind,created_at,updated_at FROM workspaces ORDER BY id").fetchall()]
         workspace_match = workspaces == source_workspaces
-        verification = [dict(row) for row in conn.execute("SELECT id,user_id,token_hash,expires_at,used,created_at FROM email_verification_tokens ORDER BY id").fetchall()]
-        verification_match = verification == source_verification
-        resets = [dict(row) for row in conn.execute("SELECT id,user_id,token_hash,expires_at,used,created_at FROM password_reset_tokens ORDER BY id").fetchall()]
-        reset_match = resets == source_resets
+        verification_match = actual["email_verification_tokens"] == 0
+        reset_match = actual["password_reset_tokens"] == 0
         target_history = [dict(row) for row in conn.execute("SELECT * FROM gateway_history ORDER BY id").fetchall()]
         target_settings = [row["settings_json"] for row in conn.execute("SELECT settings_json FROM workspace_settings").fetchall()]
 
@@ -379,8 +377,8 @@ def verify(database_url: str, auth_path: Path, history_path: Path) -> dict[str, 
         "users": source["counts"]["users"],
         "workspaces": source["counts"]["workspaces"],
         "workspace_settings": source["counts"]["workspaces"],
-        "email_verification_tokens": source["counts"]["email_verification_tokens"],
-        "password_reset_tokens": source["counts"]["password_reset_tokens"],
+        "email_verification_tokens": 0,
+        "password_reset_tokens": 0,
         "gateway_history": source["counts"]["gateway_history"],
         "legacy_user_mapping": source["counts"]["mapped_legacy_values"],
         "legacy_unassigned_records": source["counts"]["unassigned_history"],
@@ -400,8 +398,8 @@ def verify(database_url: str, auth_path: Path, history_path: Path) -> dict[str, 
         "request_ids_match": request_ids == source_ids,
         "users_match": users_match,
         "workspaces_match": workspace_match,
-        "verification_tokens_match": verification_match,
-        "password_reset_tokens_match": reset_match,
+        "verification_tokens_retired": verification_match,
+        "password_reset_tokens_retired": reset_match,
         "history_fields_match": history_fields_match,
         "workspace_settings_match": settings_match,
     }
