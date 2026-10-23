@@ -27,7 +27,7 @@ body { background: var(--bg); }
 .kpi-icon.green { background: var(--green-soft); color: var(--green); }
 .badge.good { background: var(--green-soft); color: var(--green); }
 .badge.bad { background: #fff0f2; color: var(--red); }
-.topbar { background: rgba(255, 255, 255, .94); }
+.topbar { background: var(--panel); }
 .chart-empty { background: rgba(255, 255, 255, .5); }
 .workspace-chip { display: inline-flex; align-items: center; width: fit-content; margin-top: 8px; padding: 4px 9px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 11px; font-weight: 700; }
 .dark {

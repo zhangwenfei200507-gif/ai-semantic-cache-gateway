@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.db.postgres import postgres_configured
+from app.config.settings import settings
 from app.workspace.service import ensure_personal_workspace
 
 from .database import get_connection, init_db
@@ -16,12 +17,18 @@ def _user(row) -> dict | None:
     if row is None:
         return None
 
+    email = str(row["email"] or "").strip().lower()
+    email_admin_binding = (
+        not settings.is_admin_configured()
+        and bool(str(settings.admin_email or "").strip())
+        and email == str(settings.admin_email).strip().lower()
+    )
     user = {
         "id": row["id"],
         "email": row["email"],
         "is_active": bool(row["is_active"]),
         "is_verified": True,
-        "is_admin": bool(row["is_admin"]),
+        "is_admin": bool(row["is_admin"]) or email_admin_binding,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

@@ -28,6 +28,26 @@ class AdminAuthorizationTests(unittest.TestCase):
                 get_current_admin({"id": 1, "is_admin": True})
             self.assertEqual(not_configured.exception.status_code, 403)
 
+    def test_admin_email_binding_is_explicit_and_scoped(self):
+        from app.auth.dependencies import get_current_admin
+        from app.config.settings import settings
+
+        with patch.object(settings, "admin_user_id", None), patch.object(
+            settings, "admin_email", "zhangwenfei200507@gmail.com"
+        ):
+            admin = {
+                "id": 7,
+                "email": "zhangwenfei200507@gmail.com",
+                "is_admin": True,
+            }
+            self.assertIs(get_current_admin(admin), admin)
+
+            with self.assertRaises(HTTPException) as denied:
+                get_current_admin(
+                    {"id": 8, "email": "other@example.com", "is_admin": True}
+                )
+            self.assertEqual(denied.exception.status_code, 403)
+
     def test_admin_routes_reject_normal_user_and_hide_sensitive_fields(self):
         from fastapi.testclient import TestClient
 

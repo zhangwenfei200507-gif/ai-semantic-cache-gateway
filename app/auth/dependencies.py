@@ -90,15 +90,22 @@ def get_current_admin(
 ) -> dict:
 
     configured_admin_id = settings.admin_user_id
-    if configured_admin_id is None:
+    configured_admin_email = str(settings.admin_email or "").strip().lower()
+    if configured_admin_id is None and not configured_admin_email:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator access is not configured",
         )
 
-    # The deployment setting narrows access to one immutable database user;
-    # the database flag remains the authoritative authorization record.
-    if int(user["id"]) != int(configured_admin_id) or not user["is_admin"]:
+    # Prefer the immutable database user ID. Email is an explicit bootstrap
+    # fallback for OAuth-only deployments that have not yet persisted the ID.
+    id_matches = configured_admin_id is not None and int(user["id"]) == int(configured_admin_id)
+    email_matches = (
+        configured_admin_id is None
+        and bool(configured_admin_email)
+        and str(user.get("email") or "").strip().lower() == configured_admin_email
+    )
+    if not (id_matches or email_matches) or not user["is_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator access required",
