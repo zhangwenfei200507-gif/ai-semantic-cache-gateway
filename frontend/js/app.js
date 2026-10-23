@@ -173,7 +173,7 @@ function shell(){
 }
 function ensureDesignSystem(){
  if(document.getElementById("design-system-css"))return;
- const link=document.createElement("link");link.id="design-system-css";link.rel="stylesheet";link.href="/css/design-system.css?v=20261020-1";document.head.appendChild(link);
+ const link=document.createElement("link");link.id="design-system-css";link.rel="stylesheet";link.href="/css/design-system.css?v=20261023-1";document.head.appendChild(link);
 }
 function applyTheme(theme){const value=["light","dark","sakura"].includes(theme)?theme:"light";document.documentElement.classList.remove("dark","theme-sakura");if(value==="dark")document.documentElement.classList.add("dark");if(value==="sakura")document.documentElement.classList.add("theme-sakura");localStorage.setItem("ascg_theme",value);const button=document.getElementById("theme-toggle");if(button){button.textContent=value==="sakura"?"✿":value==="dark"?"☾":"✦";button.title=value==="sakura"?"Switch to light theme":value==="dark"?"Switch to Sakura theme":"Switch to dark theme"}}
 function nextTheme(){const current=localStorage.getItem("ascg_theme")||"light";return current==="light"?"dark":current==="dark"?"sakura":"light"}
