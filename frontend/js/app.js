@@ -158,6 +158,11 @@ function shell(){
  const p=page(),m=PAGES[p]||PAGES.dashboard;
  const navItems=state.user?.is_admin?[...NAV,ADMIN_NAV]:NAV;
  if(!document.querySelector(".skip-link"))document.body.insertAdjacentHTML("afterbegin",`<a class="skip-link" href="#page-root">Skip to content</a>`);
+ document.body.classList.remove("mobile-nav-open");
+ const sidebar=document.querySelector(".sidebar");
+ sidebar.id="app-sidebar";
+ sidebar.setAttribute("aria-label","Main navigation");
+ if(!document.getElementById("mobile-nav-backdrop"))document.body.insertAdjacentHTML("afterbegin",`<div class="mobile-nav-backdrop" id="mobile-nav-backdrop"></div>`);
  document.querySelector(".sidebar").innerHTML=`
   <div class="brand"><div class="brand-icon">AI</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong><span>v2.0.0</span></div></div>
   <nav>${navItems.map(([k,h,i])=>`<a class="nav-item ${k===p?"active":""}" href="${h}"><span class="nav-icon">${i}</span><span>${PAGES[k].title}</span></a>`).join("")}</nav>
@@ -165,7 +170,11 @@ function shell(){
   <div class="sidebar-user" id="sidebar-user"><div class="avatar">?</div><div class="user-text"><strong>Loading…</strong><span>User</span></div></div>
   <div class="sidebar-status" id="sidebar-status"><div class="status-title">Gateway Status</div><div class="status-row"><span>Status</span><strong>Loading</strong></div></div>
   <button class="logout-btn" id="logout-btn">↪&nbsp; Logout</button>`;
- document.querySelector(".topbar").innerHTML=`<div class="topbar-title"><div class="breadcrumb">${esc(m.crumb)}</div><h1>${esc(m.title)}</h1><p>${esc(m.subtitle)}</p></div><div class="topbar-actions"><button class="icon-btn" id="refresh-page" type="button" title="Refresh" aria-label="Refresh page">↻</button><button class="icon-btn" id="theme-toggle" type="button" title="Change theme" aria-label="Change theme">✦</button><button class="account-menu" id="account-menu" type="button" aria-label="Account menu"><div class="avatar small" id="top-avatar">?</div><div><strong id="top-user">User</strong><span id="top-role">User</span></div><span aria-hidden="true">⌄</span></button></div>`;
+ document.querySelector(".topbar").innerHTML=`<div class="topbar-title"><div class="breadcrumb">${esc(m.crumb)}</div><h1>${esc(m.title)}</h1><p>${esc(m.subtitle)}</p></div><div class="topbar-actions"><button class="icon-btn mobile-menu-toggle" id="mobile-menu-toggle" type="button" title="Open navigation" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false">☰</button><button class="icon-btn" id="refresh-page" type="button" title="Refresh" aria-label="Refresh page">↻</button><button class="icon-btn" id="theme-toggle" type="button" title="Change theme" aria-label="Change theme">✦</button><button class="account-menu" id="account-menu" type="button" aria-label="Account menu"><div class="avatar small" id="top-avatar">?</div><div><strong id="top-user">User</strong><span id="top-role">User</span></div><span aria-hidden="true">⌄</span></button></div>`;
+ const setMobileNav=open=>{document.body.classList.toggle("mobile-nav-open",open);const toggle=document.getElementById("mobile-menu-toggle");if(toggle){toggle.setAttribute("aria-expanded",String(open));toggle.setAttribute("aria-label",open?"Close navigation":"Open navigation");toggle.title=open?"Close navigation":"Open navigation"}};
+ document.getElementById("mobile-menu-toggle").onclick=()=>setMobileNav(!document.body.classList.contains("mobile-nav-open"));
+ document.getElementById("mobile-nav-backdrop").onclick=()=>setMobileNav(false);
+ document.querySelectorAll(".sidebar .nav-item").forEach(item=>item.addEventListener("click",()=>setMobileNav(false)));
  document.getElementById("logout-btn").onclick=async()=>{try{await api("/api/auth/logout",{method:"POST",allowAuthRedirect:false})}catch{}clearToken();location.href="/pages/login.html"};
  document.getElementById("refresh-page").onclick=()=>location.reload();
  document.getElementById("theme-toggle").onclick=()=>applyTheme(nextTheme());
@@ -174,7 +183,7 @@ function shell(){
 }
 function ensureDesignSystem(){
  if(document.getElementById("design-system-css"))return;
- const link=document.createElement("link");link.id="design-system-css";link.rel="stylesheet";link.href="/css/design-system.css?v=20261029-1";document.head.appendChild(link);
+ const link=document.createElement("link");link.id="design-system-css";link.rel="stylesheet";link.href="/css/design-system.css?v=20261030-1";document.head.appendChild(link);
 }
 function applyTheme(theme){const value=["light","dark","sakura"].includes(theme)?theme:"light";document.documentElement.classList.remove("dark","theme-sakura");if(value==="dark")document.documentElement.classList.add("dark");if(value==="sakura")document.documentElement.classList.add("theme-sakura");localStorage.setItem("ascg_theme",value);const button=document.getElementById("theme-toggle");if(button){button.textContent=value==="sakura"?"✿":value==="dark"?"☾":"✦";button.title=value==="sakura"?"Switch to light theme":value==="dark"?"Switch to Sakura theme":"Switch to dark theme"}}
 function nextTheme(){const current=localStorage.getItem("ascg_theme")||"light";return current==="light"?"dark":current==="dark"?"sakura":"light"}

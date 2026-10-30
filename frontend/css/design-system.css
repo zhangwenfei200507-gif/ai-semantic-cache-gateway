@@ -262,6 +262,119 @@ body[data-page="playground"] .page-root { padding: 0 28px; }
   .getting-started { padding: 23px 16px 18px; }
   .auth-card { padding: 26px 20px; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .mobile-nav-backdrop { transition: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* Mobile layout: use a real navigation drawer instead of squeezing the desktop rail. */
+.mobile-menu-toggle, .mobile-nav-backdrop { display: none; }
+
+@media (max-width: 900px) {
+  body { overflow-x: hidden; }
+  .mobile-menu-toggle { display: inline-flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1; }
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(280px, 86vw);
+    height: 100dvh;
+    padding: 24px 14px 18px;
+    transform: translateX(-105%);
+    transition: transform .2s ease;
+    z-index: 60;
+    overflow-y: auto;
+    box-shadow: 14px 0 35px rgba(20, 35, 65, .14);
+  }
+  .sidebar .brand { justify-content: flex-start; padding: 0 10px 28px; }
+  .sidebar .brand-name { display: flex; }
+  .sidebar .sidebar-user, .sidebar .sidebar-status { display: block; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar .nav-item { justify-content: flex-start; padding: 0 12px; }
+  .sidebar .nav-item > span:last-child { display: inline; }
+  .sidebar .sidebar-spacer { display: block; }
+  .sidebar .logout-btn { margin: 0 5px; padding: 0; font-size: inherit; }
+  .sidebar .logout-btn::before { content: none; }
+  .main { margin-left: 0; min-width: 0; }
+  .mobile-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    display: block;
+    background: rgba(15, 25, 42, .46);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+    z-index: 50;
+  }
+  .mobile-nav-open .sidebar { transform: translateX(0); }
+  .mobile-nav-open .mobile-nav-backdrop { opacity: 1; pointer-events: auto; }
+  body.mobile-nav-open { overflow: hidden; }
+  .topbar { padding: 16px 18px; gap: 12px; }
+  .topbar-title { min-width: 0; }
+  .topbar-title h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .page-root { padding: 20px 18px 32px; min-width: 0; overflow-x: hidden; }
+  .middle-grid { grid-template-columns: 1fr 1fr; }
+  .middle-grid > :last-child { grid-column: 1 / -1; }
+  .playground-layout { grid-template-columns: 1fr; }
+  .pg-right { grid-column: auto; display: block; }
+  .table-wrap { max-width: 100%; overflow-x: auto; }
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav { position: static; display: flex; gap: 4px; overflow-x: auto; }
+  .settings-nav .eyebrow { display: none; }
+  .settings-tab { flex: 0 0 auto; width: auto; white-space: nowrap; }
+  body[data-page="playground"] .sidebar { position: fixed; width: min(280px, 86vw); height: 100dvh; padding: 24px 14px 18px; }
+  body[data-page="playground"] .main { margin-left: 0; }
+  body[data-page="playground"] .page-root { padding: 0 14px; }
+  body[data-page="playground"] .topbar { padding: 12px 14px; min-height: 66px; }
+  body[data-page="playground"] .chat-toolbar { flex-wrap: wrap; align-items: stretch; gap: 8px; }
+  body[data-page="playground"] .chat-model-label { flex: 1 1 100%; min-width: 0; font-size: 11px; gap: 6px; }
+  body[data-page="playground"] .chat-model-label select { width: 100%; max-width: none; font-size: 12px; }
+  body[data-page="playground"] .chat-tools { width: 100%; justify-content: flex-end; }
+  body[data-page="playground"] .chat-thread { padding: 14px 0 20px; }
+  body[data-page="playground"] .chat-composer { width: 100%; margin: 6px auto 12px; padding: 12px; border-radius: 12px; }
+  body[data-page="playground"] .chat-composer textarea { height: 72px; }
+  body[data-page="playground"] .chat-question { max-width: 100%; padding: 12px 14px; }
+  body[data-page="playground"] .chat-image { width: 100%; max-width: 100%; }
+  body[data-page="playground"] .chat-image img { width: 100%; max-height: none; }
+  body[data-page="playground"] .chat-details dl { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .topbar { align-items: center; }
+  .topbar-title h1 { font-size: 20px; }
+  .topbar-title p { display: none; }
+  .topbar-actions { flex: 0 0 auto; }
+  .topbar-actions .icon-btn { width: 34px; height: 34px; }
+  .account-menu { min-width: 0; padding: 4px; }
+  .account-menu > div:nth-child(2), .account-menu > span { display: none; }
+  .page-root { padding: 16px 14px 26px; }
+  .kpi-grid, .dashboard-primary-kpis, .dashboard-secondary-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .dashboard-grid, .top-grid, .middle-grid, .two-col, .playground-layout { grid-template-columns: 1fr; }
+  .middle-grid > :last-child { grid-column: auto; }
+  .pg-right { display: block; }
+  .page-toolbar, .analytics-toolbar { align-items: stretch; flex-direction: column; }
+  .toolbar, .compact-toolbar, .toolbar-actions { flex-wrap: wrap; }
+  .toolbar input, .toolbar select, .compact-toolbar input, .compact-toolbar select, .toolbar-actions input { max-width: none; min-width: 0; flex: 1 1 140px; }
+  .toolbar-actions { width: 100%; }
+  .setting-main { flex-direction: column; align-items: stretch; gap: 16px; }
+  .range-wrap { min-width: 0; }
+  .field-grid, .setting-list, .stats-grid { grid-template-columns: 1fr; }
+  .onboarding-actions { flex-direction: column; align-items: stretch; }
+  .onboarding-primary, .onboarding-secondary { width: 100%; }
+  .onboarding-steps { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 460px) {
+  .topbar { padding: 13px 12px; }
+  .topbar-title h1 { font-size: 18px; }
+  .page-root { padding: 14px 10px 24px; }
+  .panel { padding: 15px; }
+  .kpi-grid, .dashboard-primary-kpis, .dashboard-secondary-kpis { grid-template-columns: 1fr !important; }
+  .kpi-card { min-height: 86px; }
+  .getting-started { padding: 23px 16px 18px; }
+  .auth-card { padding: 26px 20px; }
 }
