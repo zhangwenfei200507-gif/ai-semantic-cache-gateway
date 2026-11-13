@@ -25,7 +25,6 @@ ENV HF_HUB_OFFLINE=1 \
 COPY app ./app
 COPY config/providers.yaml ./config/providers.yaml
 COPY frontend ./frontend
-COPY docs ./docs
 
 EXPOSE 8000
 

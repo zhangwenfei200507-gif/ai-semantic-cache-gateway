@@ -31,3 +31,8 @@ models/
 .idea/
 *.log
 Thumbs.db
+
+# Local development-only material is not part of the public project tree.
+/tests/
+/docs/PLAYGROUND_IMAGE_FIX.md
+/README_FRONTEND_INTEGRATION.txt
