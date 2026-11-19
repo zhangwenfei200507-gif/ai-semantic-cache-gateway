@@ -81,7 +81,7 @@ function renderChat(root, opts) {
     <div class="chat-workspace">
       <div class="chat-toolbar">
         <label class="chat-model-label">Model
-          <select id="pg-model"><option value="auto">Auto · Smart Routing</option>${opts}</select>
+          <select id="pg-model"><option value="auto">Auto routing</option>${opts}</select>
         </label>
         <div class="chat-tools">
           <a class="chat-history-link" href="/pages/requests.html">Requests</a>
@@ -93,7 +93,7 @@ function renderChat(root, opts) {
       <div class="chat-thread" id="chat-thread" role="log" aria-label="Conversation" tabindex="0"></div>
       <form class="chat-composer" id="chat-composer">
         <label class="chat-input-label" for="pg-message">Message</label>
-        <textarea id="pg-message" rows="3" maxlength="12000" placeholder="Ask anything, or describe an image..." required></textarea>
+        <textarea id="pg-message" rows="3" maxlength="12000" placeholder="Enter a prompt or describe an image…" required></textarea>
         <div class="chat-composer-actions">
           <div class="chat-tools">
             ${chatButton("pg-preview", "route", "Preview routing")}
@@ -104,6 +104,7 @@ function renderChat(root, opts) {
           ${chatButton("pg-stop", "square", "Stop waiting", "hidden")}
         </div>
       </form>
+      <aside class="chat-inspector" id="chat-inspector" aria-label="Latest request"></aside>
     </div>`;
   const model = document.getElementById("pg-model");
   model.value = chat.model;
@@ -187,8 +188,8 @@ async function sendChat() {
     delete turn.result;
     turn.error = error.message;
   } finally {
-    if (generation !== chatSessionGeneration) return;
     clearInterval(timer);
+    if (generation !== chatSessionGeneration) return;
     turn.pending = false;
     chatController = null;
     saveChat();
@@ -248,17 +249,18 @@ function renderChatTurns() {
           <div class="chat-reply-actions">
             <button class="chat-icon" data-chat-action="copy" data-id="${esc(turn.id)}" title="Copy response" aria-label="Copy response">${chatIcon("copy")}</button>
             <button class="chat-icon" data-chat-action="download" data-id="${esc(turn.id)}" title="Download response" aria-label="Download response">${chatIcon("download")}</button>
-            <span>${esc(r?.model || "-")} · ${r?.cacheHit ? esc(r.cacheType || "Cache hit") : "Generated"} · ${images.length ? `${images.length} image` : `${num(r?.tokens)} tokens`}</span>
+            <span>${esc(r?.model || "—")} · ${images.length ? `${images.length} image` : `${num(r?.tokens)} tokens`}</span>${cacheBadge(chatCacheRecord(r))}
           </div>
           <details class="chat-details"><summary>Request details</summary>
             <dl>${Object.entries({
               Provider: r?.provider, Model: r?.model, "Requested model": turn.requestedModel,
               "Input tokens": r?.promptTokens, "Output tokens": r?.completionTokens,
               "Cost (USD)": images.length ? "Image pricing not configured" : money(r?.cost),
-              "Latency (ms)": r?.latency, Cache: r?.cacheType || (r?.cacheHit ? "hit" : "miss"),
+              "Latency (ms)": r?.latency, Cache: CACHE_OUTCOMES[cacheOutcome(chatCacheRecord(r))],
               Similarity: r?.similarity ?? "-", "Request ID": r?.requestId || "-"
             }).map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>
-            <ul>${(r?.routing?.reasons || []).map(reason => `<li>${esc(reason)}</li>`).join("")}</ul>
+            ${r?.routing?.reasons?.length ? `<ul>${r.routing.reasons.map(reason => `<li>${esc(reason)}</li>`).join("")}</ul>` : ""}
+            ${requestHistoryLink(r?.requestId)}
           </details>`;
     return `<article class="chat-turn">
       <div class="chat-question"><span class="chat-role">You</span><div>${esc(turn.question)}</div>
@@ -266,7 +268,7 @@ function renderChatTurns() {
       </div>
       <div class="chat-assistant"><span class="chat-role">${esc(r?.provider === "qwen_image" ? "Qwen" : r?.provider || "Gateway")}</span>${result}</div>
     </article>`;
-  }).join("") : `<div class="chat-welcome"><span class="chat-welcome-mark">AI</span><h2>What would you like to create?</h2></div>`;
+  }).join("") : `<div class="chat-welcome"><span class="chat-welcome-mark">${uiIcon("gateway")}</span><h2>Send a test request</h2><p>Choose auto routing or a model, then enter a prompt. Request details appear with the response.</p></div>`;
   thread.querySelectorAll("[data-chat-action]").forEach(button => button.onclick = () => chatAction(button));
   thread.querySelectorAll(".chat-prose a").forEach(link => {
     if (!safeImageUrl(link.href)) link.removeAttribute("href");
@@ -277,8 +279,45 @@ function renderChatTurns() {
     img.hidden = true;
     img.closest("figure").querySelector("figcaption").prepend("Image unavailable or expired. ");
   });
-  const latest = thread.lastElementChild;
-  if (latest) thread.scrollTop += latest.getBoundingClientRect().top - thread.getBoundingClientRect().top - 12;
+  renderChatInspector();
+  scrollChatToLatest();
+}
+
+function scrollChatToLatest() {
+  const thread = document.getElementById("chat-thread");
+  const latest = thread?.lastElementChild;
+  if (latest && thread.getClientRects().length) {
+    thread.scrollTop += latest.getBoundingClientRect().top - thread.getBoundingClientRect().top - 12;
+  }
+}
+
+function chatCacheRecord(result) {
+  return {cache_hit:result?.cacheHit, cache_type:result?.cacheType};
+}
+
+function renderChatInspector() {
+  const inspector = document.getElementById("chat-inspector");
+  if (!inspector) return;
+  const turn = chat.turns.at(-1);
+  const result = turn?.result;
+  const header = '<div class="inspector-title"><h2>Latest request</h2></div>';
+  if (!result) {
+    const message = turn?.pending ? "Waiting for the gateway to finish…" : turn?.error ? "See the error in the conversation." : "Model, cache, and usage details appear here after a response.";
+    inspector.innerHTML = `${header}<div class="inspector-empty"><span class="workbench-mark">${uiIcon("route")}</span><p>${esc(message)}</p></div>`;
+    return;
+  }
+  const rows = {
+    "Requested model":turn.requestedModel === "auto" ? "Auto routing" : turn.requestedModel,
+    "Selected model":result.model,
+    "Latency":latencyLabel(Number(result.latency) > 0 ? Number(result.latency) : null),
+    "Used tokens":num(result.tokens),
+    "Cost (USD)":result.images?.length ? "Pricing unavailable" : moneyShort(result.cost),
+    "Similarity":result.similarity,
+  };
+  inspector.innerHTML = `${header}
+    <div class="inspector-provider"><span>${esc(result.provider || "Gateway")}</span>${cacheBadge(chatCacheRecord(result))}</div>
+    <dl>${Object.entries(rows).map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value ?? "—")}</dd></div>`).join("")}</dl>
+    ${result.requestId ? `<p class="inspector-id"><span>Request ID</span><code>${esc(result.requestId)}</code></p>${requestHistoryLink(result.requestId)}` : ""}`;
 }
 
 async function chatAction(button) {
@@ -419,7 +458,7 @@ function expandChat(id, buttonId) {
 function closeChatFullscreen() {
   document.querySelectorAll(".chat-fullscreen").forEach(element => element.classList.remove("chat-fullscreen"));
   document.querySelector(".chat-exit-fullscreen")?.remove();
-  document.querySelectorAll('[aria-pressed="true"]').forEach(button => button.setAttribute("aria-pressed", "false"));
+  document.querySelectorAll("#expand-request, #expand-response").forEach(button => button.setAttribute("aria-pressed", "false"));
 }
 
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeChatFullscreen(); });

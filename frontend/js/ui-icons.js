@@ -2,6 +2,11 @@
 "use strict";
 window.gatewayIcon=function(name){
  const paths={
+  gateway:'M3 6h4l5 6h9 M3 18h4l5-6 M3 12h9 M18 9l3 3-3 3',
+  close:'m6 6 12 12 M18 6 6 18',
+  code:'m8 6-6 6 6 6 m8-12 6 6-6 6 m-3-15-2 18',
+  route:'M5 5h10a4 4 0 0 1 0 8H9a3 3 0 0 0 0 6h10 M16 16l3 3-3 3 M3 5h.01',
+  layers:'m12 3 9 5-9 5-9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5',
   dashboard:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
   playground:'M21 11.5a8 8 0 0 1-8 8H6l-4 3v-11a9 9 0 0 1 19 0Z',
   providers:'m12 3 9 5-9 5-9-5 9-5Z M3 8v9l9 5 9-5V8 M12 13v9',
