@@ -16,7 +16,7 @@ Python 3.11, FastAPI, Redis, Sentence Transformers, PostgreSQL/SQLite, JavaScrip
 
 ## Console screenshots
 
-See the [console screenshot gallery](docs/ui-screenshots/README.md) for the dashboard, request workbench, and administration views. The gallery identifies the data and viewport used for each capture.
+See the [console screenshot gallery](ui/screenshots/README.md) for the dashboard, request workbench, and administration views. The gallery identifies the data and viewport used for each capture.
 
 ## Request flow
 
