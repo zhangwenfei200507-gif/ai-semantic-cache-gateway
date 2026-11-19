@@ -1,22 +1,23 @@
 "use strict";
 
-const PAGES={
- dashboard:{title:"Dashboard",subtitle:"Gateway overview and real-time statistics",crumb:"Gateway / Dashboard"},
- playground:{title:"Playground",subtitle:"Test requests, inspect routing and cache behavior in real time.",crumb:"Gateway / Playground"},
- cache:{title:"Cache",subtitle:"Semantic cache entries and controls",crumb:"Gateway / Cache"},
- requests:{title:"Requests",subtitle:"Request history, filters and details",crumb:"Gateway / Requests"},
- providers:{title:"Providers",subtitle:"Configured providers and routing models",crumb:"Gateway / Providers"},
- metrics:{title:"Analytics",subtitle:"Usage, cost and latency",crumb:"Gateway / Analytics"},
- system:{title:"System",subtitle:"Runtime diagnostics",crumb:"Gateway / System"},
- admin:{title:"Admin",subtitle:"Platform users, workspaces and service health",crumb:"Gateway / Admin"},
- settings:{title:"Settings",subtitle:"Gateway configuration",crumb:"Gateway / Settings"}
+const PAGES = {
+  dashboard: {title:"Dashboard", subtitle:"Monitor request volume, cache outcomes and provider connections."},
+  playground: {title:"Playground", subtitle:"Run requests and inspect how the gateway handles them."},
+  cache: {title:"Cache", subtitle:"Inspect stored responses and manage cache entries."},
+  requests: {title:"Requests", subtitle:"Find a request and inspect its result, usage and cache outcome."},
+  providers: {title:"Providers", subtitle:"Connect model providers and manage which models the gateway can use."},
+  metrics: {title:"Analytics", subtitle:"Review recorded usage, cost and latency across your requests."},
+  system: {title:"System", subtitle:"Inspect gateway services, Redis and runtime diagnostics."},
+  admin: {title:"Admin", subtitle:"Monitor platform users, workspaces and service health."},
+  settings: {title:"Settings", subtitle:"Manage your workspace configuration and defaults."}
 };
-const NAV=[
- ["dashboard","/","DB"],["playground","/pages/playground.html","AI"],["providers","/pages/providers.html","PR"],["cache","/pages/cache.html","CA"],
- ["requests","/pages/requests.html","RQ"],["metrics","/pages/metrics.html","AN"],["settings","/pages/settings.html","ST"]
+const NAV_GROUPS = [
+  {label:"Workspace", items:[["dashboard","/"],["playground","/pages/playground.html"],["requests","/pages/requests.html"]]},
+  {label:"Operations", items:[["metrics","/pages/metrics.html"],["cache","/pages/cache.html"],["providers","/pages/providers.html"],["settings","/pages/settings.html"]]},
+  {label:"Administration", admin:true, items:[["system","/pages/system.html"],["admin","/pages/admin.html"]]},
 ];
-const ADMIN_NAV=["admin","/pages/admin.html","AD"];
-const state={user:null,dashboard:null,cache:null,requests:[],providers:null,metrics:null,system:null,settings:null,playground:{messages:[],response:null,routing:null}};
+
+const state = {user:null};
 const page=()=>document.body.dataset.page||"dashboard";
 const esc=v=>String(v??"-").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]));
 const num=v=>Number(v||0).toLocaleString();
@@ -152,107 +153,299 @@ function card(title,body,extra=""){return `<section class="panel"><div class="pa
 function uiIcon(name){return window.gatewayIcon?.(name)||""}
 function kpi(label,value,hint="",icon="·",tone="blue"){const symbol=/cost/i.test(label)?"cost":/latency|ttl/i.test(label)?"clock":/cache|hits/i.test(label)?"cache":/provider|model/i.test(label)?"providers":"metrics";return `<div class="kpi-card"><div class="kpi-icon ${tone}">${uiIcon(symbol)}</div><div class="kpi-copy"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(hint)}</small></div></div>`}
 function table(headers,rows,empty="No data"){const normalized=Array.isArray(rows)?rows:(rows?[rows]:[]);const labelled=normalized.map(row=>{let column=0;return row.replace(/<td(\s[^>]*)?>/g,(match)=>`${match.slice(0,-1)} data-label="${esc(headers[column++]||"")}">`)});return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${labelled.length?labelled.join(""):`<tr><td colspan="${headers.length}" class="empty">${esc(empty)}</td></tr>`}</tbody></table></div>`}
-function statusBadge(v){const s=String(v??"").toLowerCase();const cls=s.includes("error")||s.includes("fail")||s.includes("offline")?"bad":s.includes("hit")||s.includes("healthy")||s.includes("active")||s.includes("connected")||s==="ok"?"good":"neutral";return `<span class="badge ${cls}">${esc(v||"-")}</span>`}
+function statusBadge(v){const s=String(v??"").toLowerCase();const cls=s.includes("error")||s.includes("fail")||s.includes("offline")?"bad":s.includes("hit")||s.includes("healthy")||s.includes("active")||s.includes("connected")||["verified","ready","enabled","ok"].includes(s)?"good":"neutral";return `<span class="badge ${cls}">${esc(v||"-")}</span>`}
 function emptyPanel(title,text){return card(title,`<div class="empty-state"><div class="empty-icon">—</div><strong>${esc(text)}</strong><span>Waiting for backend data.</span></div>`)}
 
-function shell(){
- const p=page(),m=PAGES[p]||PAGES.dashboard;
- const navItems=state.user?.is_admin?[...NAV,ADMIN_NAV]:NAV;
- if(!document.querySelector(".skip-link"))document.body.insertAdjacentHTML("afterbegin",`<a class="skip-link" href="#page-root">Skip to content</a>`);
- document.body.classList.remove("mobile-nav-open");
- const sidebar=document.querySelector(".sidebar");
- sidebar.id="app-sidebar";
- sidebar.setAttribute("aria-label","Main navigation");
- if(!document.getElementById("mobile-nav-backdrop"))document.body.insertAdjacentHTML("afterbegin",`<div class="mobile-nav-backdrop" id="mobile-nav-backdrop"></div>`);
- document.querySelector(".sidebar").innerHTML=`
-  <button class="drawer-close" id="close-mobile-nav" type="button" aria-label="Close navigation">×</button><div class="brand"><div class="brand-icon">${uiIcon("providers")}</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong><span>v2.0.0</span></div></div>
-  <nav>${navItems.map(([k,h])=>`<a class="nav-item ${k===p?"active":""}" ${k===p?'aria-current="page"':''} href="${h}"><span class="nav-icon">${uiIcon(k)}</span><span>${PAGES[k].title}</span></a>`).join("")}</nav>
-  <div class="sidebar-spacer"></div>
-  <div class="sidebar-user" id="sidebar-user"><div class="avatar">?</div><div class="user-text"><strong>Loading…</strong><span>User</span></div></div>
-  <div class="sidebar-status" id="sidebar-status"><div class="status-title">Gateway Status</div><div class="status-row"><span>Status</span><strong>Loading</strong></div></div>
-  <button class="logout-btn" id="logout-btn" type="button">${uiIcon("logout")} Logout</button>`;
- document.querySelector(".topbar").innerHTML=`<div class="topbar-left"><button class="icon-btn mobile-menu-toggle" id="mobile-menu-toggle" type="button" title="Open navigation" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false">${uiIcon("menu")}</button><div class="breadcrumb">${esc(m.crumb)}</div></div><div class="topbar-actions"><div id="workspace-label" class="workspace-label"></div><button class="icon-btn" id="refresh-page" type="button" title="Refresh" aria-label="Refresh page">${uiIcon("refresh")}</button><button class="icon-btn" id="theme-toggle" type="button" title="Change theme" aria-label="Change theme">${uiIcon("theme")}</button><button class="account-menu" id="account-menu" type="button" aria-label="Account menu"><div class="avatar small" id="top-avatar">?</div><div><strong id="top-user">User</strong><span id="top-role">User</span></div><span aria-hidden="true">⌄</span></button></div>`;
- let heading=document.getElementById("page-heading");if(!heading){heading=document.createElement("div");heading.id="page-heading";heading.className="page-heading";document.getElementById("page-root").before(heading)}
- heading.innerHTML=`<div><h1>${esc(m.title)}</h1><p>${esc(m.subtitle)}</p></div>${p==="dashboard"?'<a class="btn primary" href="/pages/playground.html">Open Playground</a>':""}`;
- const setMobileNav=open=>{const mobile=matchMedia("(max-width:900px)").matches;sidebar.inert=mobile&&!open;document.querySelector(".main").inert=mobile&&open;document.body.classList.toggle("mobile-nav-open",open);const toggle=document.getElementById("mobile-menu-toggle");if(toggle){toggle.setAttribute("aria-expanded",String(open));toggle.setAttribute("aria-label",open?"Close navigation":"Open navigation");toggle.title=open?"Close navigation":"Open navigation"}};
- document.getElementById("mobile-menu-toggle").onclick=()=>setMobileNav(!document.body.classList.contains("mobile-nav-open"));
- document.getElementById("mobile-nav-backdrop").onclick=()=>setMobileNav(false);
- sidebar.inert=matchMedia("(max-width:900px)").matches;
- const originalToggle=document.getElementById("mobile-menu-toggle").onclick;
- document.getElementById("mobile-menu-toggle").onclick=()=>{sidebar.inert=false;originalToggle();if(document.body.classList.contains("mobile-nav-open"))sidebar.querySelector(".nav-item.active")?.focus()};
- const closeMobileNav=()=>{setMobileNav(false);sidebar.inert=matchMedia("(max-width:900px)").matches;document.getElementById("mobile-menu-toggle").focus()};
- document.getElementById("mobile-nav-backdrop").onclick=closeMobileNav;
- document.getElementById("close-mobile-nav").onclick=closeMobileNav;
- document.addEventListener("keydown",event=>{if(!document.body.classList.contains("mobile-nav-open"))return;if(event.key==="Escape"){closeMobileNav();return}if(event.key==="Tab"){const controls=[...sidebar.querySelectorAll('a[href],button:not([disabled])')].filter(x=>x.getClientRects().length),first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}});
- matchMedia("(max-width:900px)").addEventListener("change",event=>{setMobileNav(false);sidebar.inert=event.matches});
- document.querySelectorAll(".sidebar .nav-item").forEach(item=>item.addEventListener("click",()=>setMobileNav(false)));
- document.getElementById("logout-btn").onclick=async()=>{try{await api("/api/auth/logout",{method:"POST",allowAuthRedirect:false})}catch{}clearToken();location.href="/pages/login.html"};
- document.getElementById("refresh-page").onclick=()=>location.reload();
- document.getElementById("theme-toggle").onclick=()=>applyTheme(nextTheme());
- document.getElementById("account-menu").onclick=async()=>{if(confirm("Log out of this account?")){try{await api("/api/auth/logout",{method:"POST",allowAuthRedirect:false})}catch{}clearToken();location.href="/pages/login.html"}};
- const storedTheme=localStorage.getItem("ascg_theme");applyTheme(storedTheme==="dark"||storedTheme==="sakura"?storedTheme:"light");
+function brand() {
+  return `<a class="brand" href="/" aria-label="Semantic Gateway dashboard"><span class="brand-icon">${uiIcon("gateway")}</span><span class="brand-name"><strong>Semantic Gateway</strong><span>AI cache &amp; routing</span></span></a>`;
 }
+
+function renderNavigation() {
+  const current = page();
+  document.getElementById("gateway-nav").innerHTML = NAV_GROUPS.filter(group => !group.admin || state.user?.is_admin)
+    .map(({label, items}) => `<div class="nav-group"><p>${esc(label)}</p>${items.map(([key, href]) => {
+      const active = key === current;
+      return `<a class="nav-item${active ? " active" : ""}" ${active ? 'aria-current="page"' : ""} href="${href}"><span class="nav-icon">${uiIcon(key)}</span><span>${esc(PAGES[key].title)}</span></a>`;
+    }).join("")}</div>`).join("");
+}
+
+function shell() {
+  const current = page();
+  const meta = PAGES[current] || PAGES.dashboard;
+  const sidebar = document.querySelector(".sidebar");
+  const main = document.querySelector(".main");
+  const root = document.getElementById("page-root");
+  const mobile = matchMedia("(max-width:900px)");
+
+  document.body.insertAdjacentHTML("afterbegin", '<a class="skip-link" href="#page-root">Skip to content</a><div class="mobile-nav-backdrop" id="mobile-nav-backdrop"></div>');
+  root.tabIndex = -1;
+  sidebar.id = "app-sidebar";
+  sidebar.innerHTML = `<button class="drawer-close" id="close-mobile-nav" type="button" aria-label="Close navigation">${uiIcon("close")}</button>
+    ${brand()}
+    <nav id="gateway-nav" aria-label="Gateway navigation"></nav>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-status" id="sidebar-status"></div>
+    <div class="sidebar-user" id="sidebar-user"></div>
+    <button class="logout-btn" id="logout-btn" type="button">${uiIcon("logout")} Sign out</button>`;
+  renderNavigation();
+
+  document.querySelector(".topbar").innerHTML = `<div class="topbar-left">
+    <button class="icon-btn mobile-menu-toggle" id="mobile-menu-toggle" type="button" title="Open navigation" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false">${uiIcon("menu")}</button>
+    <div class="topbar-context"><span>${uiIcon(current)} ${esc(meta.title)}</span><div id="workspace-label" class="workspace-label"></div></div>
+    </div><div class="topbar-actions">
+    <button class="icon-btn" id="refresh-page" type="button" title="Refresh page" aria-label="Refresh page">${uiIcon("refresh")}</button>
+    <button class="icon-btn" id="theme-toggle" type="button">${uiIcon("theme")}</button>
+  </div>`;
+
+  root.insertAdjacentHTML("beforebegin", `<div class="page-heading" id="page-heading"><div><h1>${esc(meta.title)}</h1><p>${esc(meta.subtitle)}</p></div>${current === "dashboard" ? `<a class="btn primary" href="/pages/playground.html">${uiIcon("playground")} Open Playground</a>` : ""}</div>`);
+
+  const toggle = document.getElementById("mobile-menu-toggle");
+  const setMobileNav = (open, restoreFocus = true) => {
+    sidebar.inert = mobile.matches && !open;
+    main.inert = mobile.matches && open;
+    document.body.classList.toggle("mobile-nav-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    const label = open ? "Close navigation" : "Open navigation";
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+    if (open) (sidebar.querySelector('[aria-current="page"]') || document.getElementById("close-mobile-nav")).focus();
+    else if (restoreFocus && mobile.matches) toggle.focus();
+  };
+  setMobileNav(false, false);
+  toggle.onclick = () => setMobileNav(true);
+  document.getElementById("mobile-nav-backdrop").onclick = () => setMobileNav(false);
+  document.getElementById("close-mobile-nav").onclick = () => setMobileNav(false);
+  mobile.addEventListener("change", () => setMobileNav(false, false));
+  document.addEventListener("keydown", event => {
+    if (!document.body.classList.contains("mobile-nav-open")) return;
+    if (event.key === "Escape") setMobileNav(false);
+    if (event.key !== "Tab") return;
+    const controls = [...sidebar.querySelectorAll("a[href],button:not([disabled])")].filter(control => control.getClientRects().length);
+    if (event.shiftKey && document.activeElement === controls[0]) {
+      event.preventDefault();
+      controls.at(-1)?.focus();
+    } else if (!event.shiftKey && document.activeElement === controls.at(-1)) {
+      event.preventDefault();
+      controls[0]?.focus();
+    }
+  });
+
+  document.getElementById("logout-btn").onclick = async () => {
+    try { await api("/api/auth/logout", {method:"POST", allowAuthRedirect:false}); } catch {}
+    clearToken();
+    location.href = "/pages/login.html";
+  };
+  document.getElementById("refresh-page").onclick = () => location.reload();
+  document.getElementById("theme-toggle").onclick = () => applyTheme(nextTheme());
+  applyTheme(localStorage.getItem("ascg_theme"));
+}
+
 function ensureDesignSystem(){
  if(document.getElementById("design-system-css"))return;
- const link=document.createElement("link");link.id="design-system-css";link.rel="stylesheet";link.href="/css/design-system.css?v=20261102-1";document.head.appendChild(link);
+ const link=document.createElement("link");link.id="design-system-css";link.rel="stylesheet";link.href="/css/design-system.css?v=20261119-1";document.head.appendChild(link);
 }
-function applyTheme(theme){const value=["light","dark","sakura"].includes(theme)?theme:"light";document.documentElement.classList.remove("dark","theme-sakura");if(value==="dark")document.documentElement.classList.add("dark");if(value==="sakura")document.documentElement.classList.add("theme-sakura");localStorage.setItem("ascg_theme",value);const button=document.getElementById("theme-toggle");if(button){button.innerHTML=uiIcon("theme");button.title=value==="sakura"?"Switch to light theme":value==="dark"?"Switch to Sakura theme":"Switch to dark theme"}}
-function nextTheme(){const current=localStorage.getItem("ascg_theme")||"light";return current==="light"?"dark":current==="dark"?"sakura":"light"}
-async function loadIdentity(){const u=await api("/api/auth/me");state.user=u;const label=u.email.split("@")[0];const initials=(label.match(/[a-zA-Z]/)?.[0]||"U").toUpperCase();document.getElementById("sidebar-user").innerHTML=`<div class="avatar">${initials}</div><div class="user-text"><strong>${esc(u.email)}</strong><span>${u.is_admin?"Administrator":"User"}</span></div>`;document.getElementById("top-user").textContent=label;document.getElementById("top-role").textContent=u.is_admin?"Administrator":"User";document.getElementById("top-avatar").textContent=initials;const title=document.getElementById("workspace-label");if(title&&u.workspace){const chip=document.createElement("span");chip.className="workspace-chip";chip.textContent=u.workspace.name;chip.title=`Workspace · ${u.workspace.name}`;title.appendChild(chip)}if(u.is_admin&&!document.querySelector('.nav-item[href="/pages/admin.html"]')){document.querySelector(".sidebar nav")?.insertAdjacentHTML("beforeend",`<a class="nav-item ${page()==="admin"?"active":""}" href="/pages/admin.html"><span class="nav-icon">${uiIcon("admin")}</span><span>Admin</span></a>`)}}
-async function loadStatus(){
- if(!state.user?.is_admin){
-  document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div>${statusBadge("Workspace ready")}`;
-  return;
- }
- try{const d=await api("/api/system",{timeoutMs:2500});state.system=d;const g=d.gateway||{};const r=d.redis||{};document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div><div class="status-row"><span>Status</span><strong>${esc(g.status||"-")}</strong></div><div class="status-row"><span>Model</span><strong>${esc(g.model||"-")}</strong></div><div class="status-row"><span>Redis</span><strong>${r.connected?"Connected":"Offline"}</strong></div>`}catch{document.getElementById("sidebar-status").innerHTML=`<div class="status-title">Gateway Status</div>${statusBadge("Loading slowly")}`}}
-
-function donut(hit,miss){const total=hit+miss;if(total<=0)return `<div class="donut empty"><span>0%</span></div>`;const p=hit/total;const deg=Math.round(p*360);return `<div class="donut" style="--deg:${deg}deg"><span>${pct(p*100)}</span></div>`}
-function lineChart(items,label="Requests"){if(!items?.length)return `<div class="chart-empty">No requests recorded yet.</div>`;const w=760,h=220,p=24,max=Math.max(...items.map(x=>Number(x.v||0)),1);const pts=items.map((x,i)=>`${p+i*(w-2*p)/Math.max(items.length-1,1)},${h-p-(Number(x.v||0)/max)*(h-2*p)}`).join(" ");const last=items[items.length-1];return `<div class="chart-wrap"><svg class="line-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)} trend"><line x1="24" y1="196" x2="736" y2="196"/><polyline points="${pts}" fill="none"/><circle cx="${p+(items.length-1)*(w-2*p)/Math.max(items.length-1,1)}" cy="${h-p-(Number(last.v||0)/max)*(h-2*p)}" r="4"/><text x="24" y="214">${esc(label)}</text><text x="650" y="24">${esc(num(last.v))}</text></svg></div>`}
-function bucketChart(items,field,label){const records=(items||[]).map(x=>({time:Number(x.created_at)*1000,value:field==="request_count"?1:Number(x[field]||0)})).filter(x=>Number.isFinite(x.time)&&x.time>0);if(!records.length)return `<div class="chart-empty">No timestamped ${esc(label.toLowerCase())} data is available.</div>`;const min=Math.min(...records.map(x=>x.time)),max=Math.max(...records.map(x=>x.time));const span=Math.max(max-min,3600000);const bucketMs=span<=86400000?3600000:span<=604800000?86400000:604800000;const buckets=new Map();records.forEach(x=>{const key=Math.floor(x.time/bucketMs)*bucketMs;buckets.set(key,(buckets.get(key)||0)+x.value)});const points=[...buckets.entries()].sort((a,b)=>a[0]-b[0]);const w=760,h=220,p={l:42,r:20,t:20,b:38};const maxValue=Math.max(...points.map(x=>x[1]),1);const xy=(x,i)=>`${p.l+i*(w-p.l-p.r)/Math.max(points.length-1,1)},${h-p.b-(x[1]/maxValue)*(h-p.t-p.b)}`;const pts=points.map(xy).join(" ");const labelAt=(v)=>new Date(v).toLocaleDateString(undefined,{month:"short",day:"numeric"});return `<div class="chart-wrap"><svg class="line-chart time-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)} over time"><line x1="${p.l}" y1="${p.t}" x2="${p.l}" y2="${h-p.b}"/><line x1="${p.l}" y1="${h-p.b}" x2="${w-p.r}" y2="${h-p.b}"/><text x="4" y="${p.t+4}">${esc(num(maxValue))}</text><text x="12" y="${h-p.b+4}">0</text><polyline points="${pts}" fill="none"/>${points.map((x,i)=>{const [cx,cy]=xy(x,i).split(",");return `<circle cx="${cx}" cy="${cy}" r="3"><title>${esc(labelAt(x[0]))}: ${esc(num(x[1]))}</title></circle>`}).join("")}<text x="${p.l}" y="${h-8}">${esc(labelAt(points[0][0]))}</text><text x="${w-p.r-54}" y="${h-8}">${esc(labelAt(points.at(-1)[0]))}</text></svg></div>`}
-function historyCharts(items){return {requests:bucketChart(items,"request_count","Requests"),usage:`<div class="trend-columns"><div><span>Tokens</span>${bucketChart(items,"total_tokens","Token usage")}</div><div><span>Cost (USD)</span>${bucketChart(items,"cost","Cost")}</div></div>`}}
-function parseHistoryTime(value){const number=Number(value);return Number.isFinite(number)&&number>0?(number<100000000000?number*1000:number):Date.parse(String(value||""))}
-function bucketChart(items,field,label){const records=(items||[]).map(x=>({time:parseHistoryTime(x.created_at),value:field==="request_count"?1:Number(x[field]||0)})).filter(x=>Number.isFinite(x.time)&&x.time>0);if(!records.length)return `<div class="chart-empty">No timestamped ${esc(label.toLowerCase())} data is available.</div>`;const span=Math.max(Math.max(...records.map(x=>x.time))-Math.min(...records.map(x=>x.time)),3600000);const bucketMs=span<=86400000?3600000:span<=604800000?86400000:604800000;const buckets=new Map();records.forEach(x=>{const key=Math.floor(x.time/bucketMs)*bucketMs;buckets.set(key,(buckets.get(key)||0)+x.value)});const points=[...buckets.entries()].sort((a,b)=>a[0]-b[0]);const w=760,h=220,p={l:42,r:20,t:20,b:38},maxValue=Math.max(...points.map(x=>x[1]),1);const xy=(x,i)=>`${p.l+i*(w-p.l-p.r)/Math.max(points.length-1,1)},${h-p.b-(x[1]/maxValue)*(h-p.t-p.b)}`;const labelAt=v=>new Date(v).toLocaleDateString(undefined,{month:"short",day:"numeric"});return `<div class="chart-wrap"><svg class="line-chart time-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)} over time"><line x1="${p.l}" y1="${p.t}" x2="${p.l}" y2="${h-p.b}"/><line x1="${p.l}" y1="${h-p.b}" x2="${w-p.r}" y2="${h-p.b}"/><text x="4" y="${p.t+4}">${esc(num(maxValue))}</text><text x="12" y="${h-p.b+4}">0</text><polyline points="${points.map(xy).join(" ")}" fill="none"/>${points.map((x,i)=>{const [cx,cy]=xy(x,i).split(",");return `<circle cx="${cx}" cy="${cy}" r="3"><title>${esc(labelAt(x[0]))}: ${esc(num(x[1]))}</title></circle>`}).join("")}<text x="${p.l}" y="${h-8}">${esc(labelAt(points[0][0]))}</text><text x="${w-p.r-54}" y="${h-8}">${esc(labelAt(points.at(-1)[0]))}</text></svg></div>`}
-function metricsFromHistory(items){const records=items||[];const failed=records.filter(x=>String(x.status||"").toLowerCase()==="error"||Boolean(x.error)).length;const providerRequests=records.filter(x=>!x.cache_hit&&!Boolean(x.error)).length;const tokens=records.reduce((n,x)=>n+Number(x.total_tokens||x.consumed_tokens||0),0);const cost=records.reduce((n,x)=>n+Number(x.cost||0),0);const latency=records.reduce((n,x)=>n+Number(x.latency_ms||0),0);return {total_requests:records.length,success_requests:Math.max(0,records.length-failed),failed_requests:failed,total_tokens:tokens,total_cost:cost,average_latency_ms:records.length?latency/records.length:0,provider_requests:providerRequests,provider_errors:failed}}
-
-async function dashboard(){
- const root=document.getElementById("page-root");root.innerHTML=`<div class="loading">Loading dashboard…</div>`;
- try{
-   let [d,r,p,s,o]=await Promise.all([
-    api("/api/dashboard",{timeoutMs:8000}).catch(()=>({})),
-    api("/api/history?limit=100",{timeoutMs:8000}).catch(()=>({items:[]})),
-    api("/api/providers",{timeoutMs:8000}).catch(()=>({active:{},providers:[]})),
-    state.user?.is_admin?api("/api/system",{timeoutMs:2500}).catch(()=>state.system||{}):Promise.resolve(state.system||{}),
-    api("/api/onboarding",{timeoutMs:8000}).catch(()=>({}))
-   ]);state.dashboard=d;state.requests=r.items||[];state.providers=p;state.system=s.gateway?s:{gateway:d.gateway||{},redis:d.redis||{},embedding:{},runtime:{}};s=state.system;const charts=historyCharts(state.requests);
-  const historyTotal=state.requests.length;const historyHits=state.requests.filter(x=>Boolean(x.cache_hit)).length;const historyMisses=Math.max(0,historyTotal-historyHits);const historyTokens=state.requests.reduce((sum,x)=>sum+Number(x.total_tokens||x.consumed_tokens||0),0);const historyCost=state.requests.reduce((sum,x)=>sum+Number(x.cost||0),0);const req={...(d.requests||{}),total:Math.max(Number(d.requests?.total||0),historyTotal)};const cache={...(d.cache||{}),hits:Math.max(Number(d.cache?.hits||0),historyHits),misses:Math.max(Number(d.cache?.misses||0),historyMisses),hit_rate:historyTotal?Math.max(Number(d.cache?.hit_rate||0),historyHits/historyTotal*100):Number(d.cache?.hit_rate||0)};const usage={...(d.usage||{}),total_tokens:Math.max(Number(d.usage?.total_tokens||0),historyTokens),total_cost:Math.max(Number(d.usage?.total_cost||0),historyCost)};const prov=d.provider||p.active||{};
-  cache.semantic_hits=Math.max(Number(cache.semantic_hits||0),state.requests.filter(x=>x.cache_hit&&String(x.cache_type||"").toLowerCase().includes("semantic")).length);cache.exact_hits=Math.max(Number(cache.exact_hits||0),state.requests.filter(x=>x.cache_hit&&String(x.cache_type||"").toLowerCase().includes("exact")).length);const recent=state.requests.slice(0,8).map(x=>`<tr><td class="mono">${esc(short(x.request_id||x.id||"-",18))}</td><td>${esc(short(x.question||"-",65))}</td><td>${statusBadge(x.cache_hit?"Hit":"Miss")}</td><td>${esc(x.cache_type||"-")}</td><td>${esc(x.status||"-")}</td></tr>`);
-  const providers=(p.providers||[]).map(x=>`<div class="provider-row"><div class="provider-mark">${esc(x.name.slice(0,2).toUpperCase())}</div><div><strong>${esc(x.name)}</strong><span>${esc(x.model||"-")}</span></div><div class="provider-state">${statusBadge(x.active?"Active":x.status||"-")}</div></div>`).join("");
-  if(o.state==="no_provider"){
-   root.innerHTML=`${onboardingCard(o)}<div class="dashboard-empty-grid">${card("Dashboard",`<div class="empty-state"><div class="empty-icon">◌</div><strong>Your Workspace is ready for its first connection</strong><span>Usage, cache and cost statistics will appear after you add a Provider and send a request.</span><a class="btn" href="/pages/providers.html?add=1">Open Providers</a></div>`)}${card("What you can do next",`<div class="empty-state"><strong>Connect · Test · Explore</strong><span>Your data remains isolated to this Workspace and updates automatically after each request.</span><a class="btn" href="/pages/playground.html?tab=routing">Learn How It Works</a></div>`)}</div>`;
-   return;
+function applyTheme(theme) {
+  const value = ["light","dark","sakura"].includes(theme) ? theme : "light";
+  document.documentElement.classList.toggle("dark", value === "dark");
+  document.documentElement.classList.toggle("theme-sakura", value === "sakura");
+  localStorage.setItem("ascg_theme", value);
+  const button = document.getElementById("theme-toggle");
+  if (button) {
+    const label = `Switch to ${nextTheme()} theme`;
+    button.title = label;
+    button.setAttribute("aria-label", label);
   }
-  root.innerHTML=`${onboardingCard(o)}
-   <div class="kpi-grid dashboard-primary-kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
-    <div title="${esc(num(req.total))} requests recorded by the current runtime/history view">${kpi("Total Requests",num(req.total),"Runtime + persisted history","↗","blue")}</div>
-    <div title="${esc(pct(cache.hit_rate))} = cache hits / cache lookups">${kpi("Cache Hit Rate",pct(cache.hit_rate),"Exact + semantic hits","◎","green")}</div>
-    <div title="Full recorded cost: ${esc(money(usage.total_cost))}">${kpi("Total Cost",moneyShort(usage.total_cost),"Tracked provider cost","$","gold")}</div>
-    <div title="Calculated from timestamped request latencies">${kpi("P95 Latency",`${Number(percentile(state.requests.map(x=>x.latency_ms),.95)).toFixed(0)} ms`,"End-to-end request latency","95","slate")}</div>
-   </div>
-   <div class="kpi-grid dashboard-secondary-kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
-    ${kpi("Semantic Hits",num(cache.semantic_hits),"Persisted/runtime hits","S","purple")}${kpi("Exact Hits",num(cache.exact_hits),"Persisted/runtime hits","E","blue")}${kpi("Total Tokens",num(usage.total_tokens),"Provider-reported usage","T","cyan")}${kpi("Cache Entries",num(cache.entries),"Current Redis entries","▤","slate")}
-   </div>
-   <div class="dashboard-grid top-grid">
-    ${card("Request Trend",charts.requests,`<span class="live-pill">● Live</span>`)}
-    ${card("Cache Hit Rate",`<div class="donut-layout">${donut(Number(cache.hits||0),Number(cache.misses||0))}<div class="legend"><div><i class="dot green"></i><span>Cache Hits</span><strong>${num(cache.hits)}</strong></div><div><i class="dot gray"></i><span>Cache Misses</span><strong>${num(cache.misses)}</strong></div><div class="legend-total"><span>Total Requests</span><strong>${num((cache.hits||0)+(cache.misses||0))}</strong></div></div></div>`)}
-   </div>
-   <div class="dashboard-grid middle-grid">
-    ${card("Recent Requests",table(["Request","Question","Cache","Type","Status"],recent,"No requests yet"),`<a class="panel-link" href="/pages/requests.html">View All</a>`)}
-    ${card("Providers Status",providers?`<div class="provider-list">${providers}</div>`:`<div class="empty-state">No provider data.</div>`,`<a class="panel-link" href="/pages/providers.html">View All</a>`)}
-    ${card("System Overview",`<div class="overview-list"><div><span>Status</span><strong>${esc(s.gateway?.status||"-")}</strong></div><div><span>Provider</span><strong>${esc(prov.name||"-")}</strong></div><div><span>Model</span><strong>${esc(prov.model||"-")}</strong></div><div><span>Redis</span><strong>${s.redis?.connected?"Connected":"Offline"}</strong></div><div><span>Embedding</span><strong>${esc(s.embedding?.model||"-")}</strong></div><div><span>Python</span><strong>${esc(s.runtime?.python||"-")}</strong></div></div>`)}
-   </div>
-   ${card("Token Usage & Cost Trend",charts.usage)}
-  `;
- }catch(e){root.innerHTML=`<div class="error-panel"><h2>Dashboard failed to load</h2><p>${esc(e.message)}</p>${button("Retry","btn primary",'id="retry-dashboard"')}</div>`;document.getElementById("retry-dashboard").onclick=dashboard}
+}
+
+function nextTheme() {
+  const current = localStorage.getItem("ascg_theme") || "light";
+  return current === "light" ? "dark" : current === "dark" ? "sakura" : "light";
+}
+
+function renderIdentity() {
+  const {email, is_admin, workspace} = state.user;
+  const initial = (email?.[0] || "U").toUpperCase();
+  document.getElementById("sidebar-user").innerHTML = `<div class="avatar">${esc(initial)}</div><div class="user-text"><strong>${esc(email)}</strong><span>${is_admin ? "Administrator" : "Workspace member"}</span></div>`;
+  if (workspace?.name) {
+    const chip = document.createElement("span");
+    chip.className = "workspace-chip";
+    chip.textContent = workspace.name;
+    chip.title = workspace.name;
+    document.getElementById("workspace-label").append(chip);
+  }
+}
+
+async function loadStatus() {
+  if (!state.user?.is_admin) return;
+  const status = document.getElementById("sidebar-status");
+  try {
+    const system = await api("/api/system", {timeoutMs:2500});
+    const healthy = ["ok", "healthy"].includes(String(system.gateway?.status).toLowerCase()) && system.redis?.connected === true;
+    status.innerHTML = `<a href="/pages/system.html"><span class="service-dot ${healthy ? "healthy" : "degraded"}"></span><span>${healthy ? "Gateway operational" : "Check system status"}</span></a>`;
+  } catch {
+    status.innerHTML = '<a href="/pages/system.html"><span class="service-dot degraded"></span><span>Status unavailable</span></a>';
+  }
+}
+
+
+const CACHE_OUTCOMES = {
+  exact: "Exact hit",
+  semantic: "Semantic hit",
+  miss: "Miss",
+  other: "Unspecified hit",
+  unavailable: "No outcome",
+};
+
+function cacheOutcome(record) {
+  const kind = String(record.cache_type || "").toLowerCase();
+  if (record.cache_hit) return ["exact", "semantic"].includes(kind) ? kind : "other";
+  return kind === "miss" ? "miss" : "unavailable";
+}
+
+function cacheBadge(record) {
+  const outcome = cacheOutcome(record);
+  return `<span class="outcome-badge ${outcome}"><i aria-hidden="true"></i>${CACHE_OUTCOMES[outcome]}</span>`;
+}
+
+function parseHistoryTime(value) {
+  if (value == null || value === "") return NaN;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) return number < 100000000000 ? number * 1000 : number;
+  const text = String(value);
+  return Date.parse(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(text) ? `${text.replace(" ", "T")}Z` : text);
+}
+
+function historyDate(value) {
+  const time = parseHistoryTime(value);
+  return Number.isFinite(time) ? new Date(time).toISOString().slice(0,10) : "";
+}
+
+function requestFailed(record) {
+  return ["error", "failed", "failure"].includes(String(record.status || "").toLowerCase()) || Boolean(record.error);
+}
+
+function metricsFromHistory(records) {
+  const cache = {exact:0, semantic:0, miss:0, other:0, unavailable:0};
+  const latencies = [];
+  let failed = 0, tokens = 0, cost = 0;
+  for (const record of records) {
+    cache[cacheOutcome(record)]++;
+    failed += Number(requestFailed(record));
+    tokens += Number(record.consumed_tokens ?? record.total_tokens) || 0;
+    cost += Number(record.cost) || 0;
+    const latency = Number(record.latency_ms);
+    if (Number.isFinite(latency) && latency > 0) latencies.push(latency);
+  }
+  cache.hits = cache.exact + cache.semantic + cache.other;
+  const lookups = cache.hits + cache.miss;
+  cache.hit_rate = lookups ? cache.hits * 100 / lookups : null;
+  return {
+    total_requests:records.length,
+    success_requests:records.length - failed,
+    failed_requests:failed,
+    total_tokens:tokens,
+    total_cost:cost,
+    latencies,
+    average_latency_ms:latencies.length ? latencies.reduce((sum, value) => sum + value, 0) / latencies.length : null,
+    cache,
+  };
+}
+
+function cacheBreakdown(cache) {
+  const keys = Object.keys(CACHE_OUTCOMES).filter(key => key === "exact" || key === "semantic" || key === "miss" || cache[key]);
+  const total = keys.reduce((sum, key) => sum + cache[key], 0);
+  return `<div class="cache-breakdown">
+    <div class="outcome-bars" aria-hidden="true">${total ? keys.filter(key => cache[key]).map(key => `<span class="${key}" style="--outcome-count:${cache[key]}"></span>`).join("") : ""}</div>
+    <dl class="outcome-legend">${keys.map(key => `<div><dt><i class="${key}" aria-hidden="true"></i>${CACHE_OUTCOMES[key]}</dt><dd>${num(cache[key])}</dd></div>`).join("")}</dl>
+  </div>`;
+}
+
+function bucketChart(items, label, valueFor, format = num) {
+  const records = items.map(item => ({time:parseHistoryTime(item.created_at), value:valueFor(item)}))
+    .filter(point => Number.isFinite(point.time) && Number.isFinite(point.value));
+  if (!records.length) return `<div class="chart-empty">No timestamped ${esc(label.toLowerCase())} data.</div>`;
+  const start = Math.min(...records.map(point => point.time));
+  const end = Math.max(...records.map(point => point.time));
+  const hour = 3600000;
+  const day = 24 * hour;
+  const span = end - start;
+  const size = span < day ? hour : span < 24 * day ? day : 7 * day * Math.max(1, Math.ceil(span / (24 * 7 * day)));
+  const floor = time => Math.floor(time / size) * size;
+  const first = floor(start);
+  const last = floor(end);
+  const buckets = Array.from({length: (last - first) / size + 1}, () => 0);
+  for (const record of records) buckets[(floor(record.time)-first)/size] += record.value;
+  const peak = Math.max(...buckets);
+  const formatTime = new Intl.DateTimeFormat(undefined, {timeZone:"UTC", month:"short", day:"numeric", ...(size === hour ? {hour:"2-digit", minute:"2-digit", hour12:false} : {})});
+  const stamps = buckets.map((_, index) => formatTime.format(first + index * size));
+  return `<figure class="histogram" aria-label="${esc(label)} over time, UTC">
+    <div class="histogram-key"><span>${esc(format(peak))}</span><span>0</span></div>
+    <div class="histogram-body">
+      <div class="histogram-plot" aria-hidden="true">${buckets.map((value, index) => `<span title="${esc(stamps[index])}: ${esc(format(value))}" style="--bar-height:${peak ? value / peak * 100 : 0}%"></span>`).join("")}</div>
+      <div class="histogram-dates" aria-hidden="true"><span>${esc(stamps[0])}</span>${stamps.length > 1 ? `<span>${esc(stamps.at(-1))}</span>` : ""}</div>
+    </div>
+    <ul class="sr-only">${buckets.map((value, index) => `<li>${esc(stamps[index])}: ${esc(format(value))}</li>`).join("")}</ul>
+  </figure>`;
+}
+
+function historyCharts(records) {
+  return {
+    requests:bucketChart(records, "Requests", () => 1),
+    usage:`<div class="trend-columns"><div><span>Tokens</span>${bucketChart(records, "Tokens", item => Number(item.consumed_tokens ?? item.total_tokens) || 0)}</div><div><span>Cost (USD)</span>${bucketChart(records, "Cost", item => Number(item.cost) || 0, moneyShort)}</div></div>`,
+  };
+}
+
+function latencyLabel(value, decimals = 0) {
+  return value == null ? "—" : `${value.toFixed(decimals)} ms`;
+}
+
+async function dashboard() {
+  const root = document.getElementById("page-root");
+  root.innerHTML = '<div class="loading" role="status">Loading dashboard…</div>';
+  try {
+    const [history, providers, onboarding] = await Promise.all([
+      api("/api/history?limit=100"),
+      api("/api/providers").catch(() => null),
+      api("/api/onboarding").catch(() => null),
+    ]);
+    const records = history.items || [];
+    const metrics = metricsFromHistory(records);
+    const {cache, latencies} = metrics;
+    const recent = records.slice(0,6).map(record => {
+      const id = record.request_id || record.id;
+      return `<tr><td><strong>${esc(short(record.question || "-", 70))}</strong><small class="mono">${esc(short(id || "-", 25))}</small></td><td>${cacheBadge(record)}</td><td>${esc(record.model || "—")}</td><td>${esc(latencyLabel(Number(record.latency_ms) > 0 ? Number(record.latency_ms) : null))}</td><td>${id ? `<button type="button" class="btn small" data-request-detail="${esc(id)}">Inspect<span class="sr-only"> ${esc(id)}</span></button>` : "—"}</td></tr>`;
+    });
+    const connections = (providers?.providers || []).filter(provider => provider.configured);
+    const providerRows = connections.slice(0,5).map(provider => `<div class="provider-row"><div class="provider-mark">${uiIcon("providers")}</div><div><strong>${esc(provider.display_name || provider.name)}</strong><span>${esc(provider.model || "No default model")}</span></div>${statusBadge(provider.verified ? "Verified" : "Needs test")}</div>`).join("");
+    const traffic = `<section class="panel dashboard-traffic">
+      <div class="panel-head"><div><h2>Request volume</h2><p>Recorded traffic by time bucket</p></div><a class="panel-link" href="/pages/metrics.html">Analytics</a></div>
+      ${bucketChart(records, "Requests", () => 1)}
+    </section>`;
+    const outcomes = `<section class="panel dashboard-outcomes">
+      <div class="panel-head"><h2>Cache outcomes</h2><a class="panel-link" href="/pages/cache.html">Open cache</a></div>
+      <div class="cache-hero-value"><strong>${cache.hit_rate == null ? "—" : pct(cache.hit_rate)}</strong><span>cache hit rate</span></div>
+      ${cacheBreakdown(cache)}
+    </section>`;
+    root.innerHTML = `${onboardingCard(onboarding)}
+      <div class="history-scope"><span>${uiIcon("clock")} Recent workspace history</span><span>${num(records.length)} loaded · Up to 100 requests</span></div>
+      <div class="kpi-grid dashboard-kpis">
+        ${kpi("Recorded requests", num(metrics.total_requests), "In this history view", "", "blue")}
+        ${kpi("P95 latency", latencyLabel(latencies.length ? percentile(latencies, .95) : null), "Across measured requests", "", "purple")}
+        ${kpi("Used tokens", num(metrics.total_tokens), "Recorded token usage", "", "cyan")}
+        ${kpi("Recorded cost", moneyShort(metrics.total_cost), "USD", "", "gold")}
+      </div>
+      <div class="dashboard-overview">${outcomes}${traffic}</div>
+      <div class="dashboard-detail">
+        ${card("Recent requests", table(["Request", "Cache", "Model", "Latency", "Action"], recent, "No recorded requests yet."), '<a class="panel-link" href="/pages/requests.html">All requests</a>')}
+        ${card("Provider connections", providerRows || `<p class="muted">${providers ? "No providers connected yet." : "Provider status unavailable."}</p>`, '<a class="panel-link" href="/pages/providers.html">Manage</a>')}
+      </div>`;
+    root.querySelectorAll("[data-request-detail]").forEach(trigger => {
+      trigger.onclick = () => showRequest(trigger.dataset.requestDetail);
+    });
+  } catch (error) {
+    root.innerHTML = `<div class="error-panel"><h2>Dashboard unavailable</h2><p>${esc(error.message)}</p>${button("Retry","btn primary",'id="retry-dashboard"')}</div>`;
+    document.getElementById("retry-dashboard").onclick = dashboard;
+  }
 }
 
 async function cachePage(){
@@ -260,25 +453,68 @@ async function cachePage(){
  try{
   const summary=await api("/api/cache");const list=summary.entries||[];
   const renderRows=(filter="")=>list.filter(x=>`${x.key||""} ${x.question||""} ${x.answer||""}`.toLowerCase().includes(filter.toLowerCase())).map(x=>{const fields=Array.isArray(x.fields)?x.fields.join(", "):Object.keys(x.fields&&typeof x.fields==="object"?x.fields:{}).join(", ");return `<tr><td class="mono">${esc(short(x.key||x.redis_key||"-",32))}</td><td>${statusBadge(x.cache_type||"exact")}</td><td>${esc(short(x.question||"-",50))}</td><td>${esc(short(x.answer||"-",70))}</td><td>${x.similarity==null?"—":Number(x.similarity).toFixed(3)}</td><td>${num(x.hit_count||0)}</td><td>${x.ttl_seconds==null?"—":`${Math.max(0,Math.round(Number(x.ttl_seconds)/60))} min`}</td><td><button class="btn small" data-inspect="${esc(x.key||x.redis_key||"")}">Inspect</button> <button class="btn small danger" data-del="${esc(x.key||x.redis_key||"")}">Delete</button><span class="sr-only">${esc(fields)}</span></td></tr>`}).join("");
-  const bind=()=>root.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{try{await api(`/api/cache/entries/${encodeURIComponent(b.dataset.del)}`,{method:"DELETE"});toast("Entry deleted","success");cachePage()}catch(e){toast(e.message,"error")}});
+  const bind=()=>{
+   root.querySelectorAll("[data-inspect]").forEach(trigger=>trigger.onclick=()=>{const item=list.find(entry=>(entry.key||entry.redis_key)===trigger.dataset.inspect);if(item)showCacheDetail(item)});
+   root.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{try{await api(`/api/cache/entries/${encodeURIComponent(b.dataset.del)}`,{method:"DELETE"});toast("Entry deleted","success");cachePage()}catch(e){toast(e.message,"error")}});
+  };
   const headers=["Key","Type","Original Query","Answer","Similarity","Hits","TTL","Actions"];
-  root.innerHTML=`<div class="kpi-grid">${kpi("Cache Entries",num(summary.size),"Current Redis entries","C","blue")}${kpi("Threshold",Number(summary.threshold??0).toFixed(2),"Semantic threshold","◎","green")}${kpi("TTL",`${Math.round(Number(summary.ttl_seconds||0)/60)} min`,"Entry expiration","T","purple")}${kpi("Redis",""+(summary.connected?"Connected":"Offline"),"Cache backend","R","slate")}</div>${card("Cache Controls",`<div class="page-toolbar"><span class="muted">Exact: ${summary.exact_enabled===false?"off":"on"} · Semantic: ${summary.semantic_enabled===false?"off":"on"}</span><div class="table-actions"><a class="btn" href="/pages/settings.html">Open Cache Settings</a><button class="btn" id="refresh-cache">Refresh</button><button class="btn danger" id="clear-cache">Clear All Cache</button></div></div>`)}${card("Cache Entries",`<div class="page-toolbar compact-toolbar"><input id="cache-search" placeholder="Search key, question or answer…"><span class="muted">${num(list.length)} entries loaded</span></div><div id="cache-table">${table(headers,renderRows(),"No cache entries yet.")}</div>`)}`;
-  document.getElementById("refresh-cache").onclick=cachePage;document.getElementById("cache-search").oninput=e=>{document.getElementById("cache-table").innerHTML=table(headers,renderRows(e.target.value),"No matching cache entries");bind()};document.getElementById("clear-cache").onclick=async()=>{if(!confirm("Clear all cache entries?"))return;try{await api("/api/cache",{method:"DELETE"});toast("Cache cleared","success");cachePage()}catch(e){toast(e.message,"error")}};root.querySelectorAll("[data-inspect]").forEach(b=>b.onclick=()=>{const x=list.find(v=>(v.key||v.redis_key)===b.dataset.inspect);if(x)showCacheDetail(x)});bind();
+  root.innerHTML=`<div class="kpi-grid">${kpi("Cache Entries",num(summary.size),"Current Redis entries","C","blue")}${kpi("Threshold",Number(summary.threshold??0).toFixed(2),"Semantic threshold","◎","green")}${kpi("TTL",`${Math.round(Number(summary.ttl_seconds||0)/60)} min`,"Entry expiration","T","purple")}${kpi("Redis",""+(summary.connected?"Connected":"Offline"),"Cache backend","R","slate")}</div>${card("Cache Controls",`<div class="page-toolbar"><span class="muted">Exact: ${summary.exact_enabled===false?"off":"on"} · Semantic: ${summary.semantic_enabled===false?"off":"on"}</span><div class="table-actions"><a class="btn" href="/pages/settings.html?section=Cache+Settings">Open Cache Settings</a><button class="btn" id="refresh-cache">Refresh</button><button class="btn danger" id="clear-cache">Clear All Cache</button></div></div>`)}${card("Cache Entries",`<div class="page-toolbar compact-toolbar"><input id="cache-search" aria-label="Search cache entries" placeholder="Search key, question or answer…"><span class="muted">${num(list.length)} entries loaded</span></div><div id="cache-table">${table(headers,renderRows(),"No cache entries yet.")}</div>`)}`;
+  document.getElementById("refresh-cache").onclick=cachePage;document.getElementById("cache-search").oninput=e=>{document.getElementById("cache-table").innerHTML=table(headers,renderRows(e.target.value),"No matching cache entries");bind()};document.getElementById("clear-cache").onclick=async()=>{if(!confirm("Clear all cache entries?"))return;try{await api("/api/cache",{method:"DELETE"});toast("Cache cleared","success");cachePage()}catch(e){toast(e.message,"error")}};bind();
  }catch(e){root.innerHTML=`<div class="error-panel"><h2>Cache unavailable</h2><p>${esc(e.message)}</p>${button("Retry","btn primary",'id="retry-cache"')}</div>`;document.getElementById("retry-cache")?.addEventListener("click",cachePage)}
 }
 
 async function requestsPage(){
  const root=document.getElementById("page-root");root.innerHTML=`<div class="loading">Loading requests…</div>`;
  try{
-  const d=await api("/api/requests?limit=500");const items=d.items||[];state.requests=items;let currentPage=1;const pageSize=20;
-  const render=()=>{const q=(document.getElementById("request-search")?.value||"").toLowerCase(),type=document.getElementById("request-cache-filter")?.value||"",status=document.getElementById("request-status-filter")?.value||"";const filtered=items.filter(x=>{const text=`${x.request_id||""} ${x.question||""} ${x.provider||""} ${x.model||""}`.toLowerCase();return(!q||text.includes(q))&&(!type||String(x.cache_type||"")===type)&&(!status||String(x.status||"")===status)});const pages=Math.max(1,Math.ceil(filtered.length/pageSize));currentPage=Math.min(currentPage,pages);const shown=filtered.slice((currentPage-1)*pageSize,currentPage*pageSize);const rows=shown.map(x=>`<tr><td class="mono">${esc(short(x.request_id||x.id||"-",22))}</td><td>${esc(short(x.question||"-",70))}</td><td>${esc(x.provider||"-")}</td><td>${esc(x.model||"-")}</td><td>${statusBadge(x.cache_hit?`${x.cache_type||"cache"} hit`:"Miss")}</td><td>${num(x.consumed_tokens??x.total_tokens)}</td><td>${num(x.saved_tokens)}</td><td>${money(x.cost)}</td><td><button class="btn small" data-view="${esc(x.request_id||x.id||"")}">View</button></td></tr>`);document.getElementById("request-table").innerHTML=table(["Request","Question","Provider","Model","Cache","Used","Saved","Cost","Action"],rows,"No matching request history");document.getElementById("request-page-label").textContent=`Page ${currentPage} / ${pages} · ${filtered.length} records`;document.getElementById("request-prev").disabled=currentPage<=1;document.getElementById("request-next").disabled=currentPage>=pages;root.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>showRequest(b.dataset.view))};
-  root.innerHTML=`<div class="kpi-grid">${kpi("Recorded Requests",num(d.count),"Persistent history","R","blue")}${kpi("Used Tokens",num(items.reduce((n,x)=>n+Number(x.consumed_tokens??x.total_tokens??0),0)),"Recorded usage","T","cyan")}${kpi("Saved Tokens",num(items.reduce((n,x)=>n+Number(x.saved_tokens||0),0)),"Estimated cache savings","S","green")}${kpi("Total Cost",money(items.reduce((n,x)=>n+Number(x.cost||0),0)),"Calculated from provider pricing","$","gold")}</div>${card("Request History",`<div class="page-toolbar compact-toolbar"><input id="request-search" placeholder="Search request, question, provider…"><select id="request-cache-filter"><option value="">All cache types</option><option value="exact">Exact</option><option value="semantic">Semantic</option></select><select id="request-status-filter"><option value="">All statuses</option><option value="success">Success</option><option value="completed">Completed</option><option value="error">Error</option></select><button class="btn" id="refresh-requests">Refresh</button><button class="btn" id="export-requests">Export CSV</button><button class="btn danger" id="clear-history">Clear History</button></div><div id="request-table"></div><div class="pagination"><button class="btn small" id="request-prev">Previous</button><span id="request-page-label"></span><button class="btn small" id="request-next">Next</button></div>`)}
+  const d=await api("/api/requests?limit=500");const items=d.items||[];let currentPage=1;const pageSize=20;
+  const render=()=>{const q=(document.getElementById("request-search")?.value||"").toLowerCase(),type=document.getElementById("request-cache-filter")?.value||"",status=document.getElementById("request-status-filter")?.value||"";const filtered=items.filter(x=>{const text=`${x.request_id||""} ${x.question||""} ${x.provider||""} ${x.model||""}`.toLowerCase();return(!q||text.includes(q))&&(!type||cacheOutcome(x)===type)&&(!status||String(x.status||"")===status)});const pages=Math.max(1,Math.ceil(filtered.length/pageSize));currentPage=Math.min(currentPage,pages);const shown=filtered.slice((currentPage-1)*pageSize,currentPage*pageSize);const rows=shown.map(x=>`<tr><td class="mono">${esc(short(x.request_id||x.id||"-",22))}</td><td>${esc(short(x.question||"-",70))}</td><td>${esc(x.provider||"-")}</td><td>${esc(x.model||"-")}</td><td>${cacheBadge(x)}</td><td>${num(x.consumed_tokens??x.total_tokens)}</td><td>${num(x.saved_tokens)}</td><td>${money(x.cost)}</td><td><button class="btn small" data-view="${esc(x.request_id||x.id||"")}">View</button></td></tr>`);document.getElementById("request-table").innerHTML=table(["Request","Question","Provider","Model","Cache","Used","Saved","Cost","Action"],rows,"No matching request history");document.getElementById("request-page-label").textContent=`Page ${currentPage} / ${pages} · ${filtered.length} records`;document.getElementById("request-prev").disabled=currentPage<=1;document.getElementById("request-next").disabled=currentPage>=pages;root.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>showRequest(b.dataset.view))};
+  root.innerHTML=`<div class="kpi-grid">${kpi("Recorded Requests",num(items.length),"Up to 500 recent requests","R","blue")}${kpi("Used Tokens",num(items.reduce((n,x)=>n+Number(x.consumed_tokens??x.total_tokens??0),0)),"Recorded usage","T","cyan")}${kpi("Saved Tokens",num(items.reduce((n,x)=>n+Number(x.saved_tokens||0),0)),"Estimated cache savings","S","green")}${kpi("Total Cost",moneyShort(items.reduce((n,x)=>n+Number(x.cost||0),0)),"Calculated from provider pricing","$","gold")}</div>${card("Request History",`<div class="page-toolbar compact-toolbar"><input id="request-search" aria-label="Search requests" placeholder="Search request, question, provider…"><select id="request-cache-filter" aria-label="Cache outcome"><option value="">All cache types</option><option value="exact">Exact</option><option value="semantic">Semantic</option><option value="miss">Miss</option><option value="other">Unspecified hit</option><option value="unavailable">No outcome</option></select><select id="request-status-filter" aria-label="Request status"><option value="">All statuses</option><option value="success">Success</option><option value="completed">Completed</option><option value="error">Error</option></select><button class="btn" id="refresh-requests">Refresh</button><button class="btn" id="export-requests">Export CSV</button><button class="btn danger" id="clear-history">Clear History</button></div><div id="request-table"></div><div class="pagination"><button class="btn small" id="request-prev">Previous</button><span id="request-page-label"></span><button class="btn small" id="request-next">Next</button></div>`)}
   `;
   ["request-search","request-cache-filter","request-status-filter"].forEach(id=>document.getElementById(id).oninput=()=>{currentPage=1;render()});document.getElementById("request-prev").onclick=()=>{currentPage--;render()};document.getElementById("request-next").onclick=()=>{currentPage++;render()};document.getElementById("refresh-requests").onclick=requestsPage;document.getElementById("clear-history").onclick=async()=>{if(!confirm("Clear request history?"))return;try{await api("/api/history",{method:"DELETE"});toast("History cleared","success");requestsPage()}catch(e){toast(e.message,"error")}};document.getElementById("export-requests").onclick=()=>{const cols=["request_id","question","provider","model","cache_type","total_tokens","saved_tokens","cost","latency_ms","created_at"];const quote=value=>'"'+String(value??"").replace(/"/g,'""')+'"';const csv=[cols.join(","),...items.map(x=>cols.map(k=>quote(x[k])).join(","))].join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));const link=document.createElement("a");link.href=url;link.download="gateway-requests.csv";link.click();URL.revokeObjectURL(url)};render();
+  const requestedId = new URLSearchParams(location.search).get("id");
+  if (requestedId) void showRequest(requestedId);
  }catch(e){root.innerHTML=`<div class="error-panel"><h2>Requests unavailable</h2><p>${esc(e.message)}</p>${button("Retry","btn primary",'id="retry-requests"')}</div>`;document.getElementById("retry-requests")?.addEventListener("click",requestsPage)}
 }
 
-async function showRequest(id){try{const d=await api(`/api/requests/${encodeURIComponent(id)}`);const images=(d.images||[]).map(x=>`<figure class="request-image"><img src="${esc(x.url)}" alt="Generated image"><figcaption><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">Preview</a> <a href="${esc(x.download_url||x.url)}" download>Download</a></figcaption></figure>`).join("");const modal=document.createElement("div");modal.className="modal-backdrop";modal.innerHTML=`<div class="modal"><button class="modal-close">×</button><div class="modal-head"><div><span class="eyebrow">Request detail</span><h2>${esc(id)}</h2></div></div>${images?`<div class="request-images">${images}</div>`:""}<div class="detail-grid">${Object.entries(d).filter(([k])=>k!=="images").map(([k,v])=>`<div><span>${esc(k)}</span><strong>${esc(typeof v==="object"?json(v):v)}</strong></div>`).join("")}</div><div class="form-actions"><button class="btn primary" id="open-history-chat">Open in Playground</button></div></div>`;document.body.appendChild(modal);modal.querySelector(".modal-close").onclick=()=>modal.remove();modal.onclick=e=>{if(e.target===modal)modal.remove()};modal.querySelector("#open-history-chat").onclick=()=>{sessionStorage.setItem(`ascg_open_history_${String(state.user?.id||"")}_${String(state.user?.workspace?.id||"")}`,id);location.href="/pages/playground.html"}}catch(e){toast(e.message,"error")}}
+
+async function showRequest(id) {
+  if (!id || document.querySelector(".request-dialog")) return;
+  const modal = document.createElement("dialog");
+  modal.className = "modal request-dialog";
+  modal.setAttribute("aria-labelledby", "request-title");
+  modal.innerHTML = `<div class="panel-head"><div><h2 id="request-title">Request details</h2><p class="mono">${esc(id)}</p></div><button class="icon-btn" type="button" aria-label="Close request details">${uiIcon("close")}</button></div><div class="request-inspection"><p role="status">Loading request…</p></div>`;
+  document.body.append(modal);
+  modal.querySelector("button").onclick = () => modal.close();
+  modal.addEventListener("close", () => modal.remove(), {once:true});
+  modal.showModal();
+  const content = modal.querySelector(".request-inspection");
+  try {
+    const record = await api(`/api/requests/${encodeURIComponent(id)}`);
+    const images = (record.images || []).map(image => `<figure class="request-image"><img src="${esc(image.url)}" alt="Generated image"><figcaption><a href="${esc(image.url)}" target="_blank" rel="noopener noreferrer">Preview</a> <a href="${esc(image.download_url || image.url)}" download>Download</a></figcaption></figure>`).join("");
+    const summary = {
+      Provider:record.provider,
+      Model:record.model,
+      Similarity:record.similarity,
+      Latency:latencyLabel(Number(record.latency_ms) > 0 ? Number(record.latency_ms) : null),
+      "Used tokens":num(record.consumed_tokens ?? record.total_tokens),
+      "Recorded cost":moneyShort(record.cost),
+    };
+    const {images: assets, ...metadata} = record;
+    content.innerHTML = `<div class="request-inspection-status">${cacheBadge(record)}${record.status ? statusBadge(record.status) : ""}</div>
+      <div class="detail-grid compact">${Object.entries(summary).map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(value ?? "—")}</strong></div>`).join("")}</div>
+      <section class="request-message"><h3>Prompt</h3><p>${esc(record.question || "No prompt recorded.")}</p></section>
+      ${images ? `<div class="request-images">${images}</div>` : ""}
+      ${record.answer || record.error ? `<section class="request-message"><h3>${record.error ? "Error" : "Response"}</h3><p>${esc(record.error || record.answer)}</p></section>` : ""}
+      <details><summary>Raw request record</summary><pre class="code-block">${esc(json(metadata))}</pre></details>
+      <div class="form-actions"><button class="btn primary" id="open-history-chat" type="button">Open in Playground</button></div>`;
+    modal.querySelector("#open-history-chat").onclick = () => {
+      sessionStorage.setItem(`ascg_open_history_${String(state.user?.id || "")}_${String(state.user?.workspace?.id || "")}`, id);
+      location.href = "/pages/playground.html";
+    };
+  } catch (error) {
+    content.innerHTML = `<p role="alert">${esc(error.message)}</p>`;
+  }
+}
 function showCacheDetail(item){const modal=document.createElement("div");modal.className="modal-backdrop";modal.innerHTML=`<div class="modal"><button class="modal-close">×</button><div class="modal-head"><div><span class="eyebrow">Cache detail</span><h2>${esc(item.cache_type||"Cache entry")}</h2></div></div><div class="detail-grid"><div><span>Cache key</span><strong class="mono">${esc(item.key||item.redis_key||"-")}</strong></div><div><span>Type</span><strong>${esc(item.cache_type||"-")}</strong></div><div><span>Original query</span><strong>${esc(item.question||"-")}</strong></div><div><span>Answer</span><strong>${esc(item.answer||"-")}</strong></div><div><span>Similarity</span><strong>${item.similarity==null?"—":esc(Number(item.similarity).toFixed(4))}</strong></div><div><span>Embedding</span><strong>${esc(item.embedding_bytes?`${item.embedding_bytes} bytes`:"—")}</strong></div></div><details><summary>Raw cache fields</summary><pre class="code-block">${esc(json(item.fields||{}))}</pre></details></div>`;document.body.appendChild(modal);modal.querySelector(".modal-close").onclick=()=>modal.remove();modal.onclick=e=>{if(e.target===modal)modal.remove()}}
 
 async function providersPage(){
@@ -290,7 +526,24 @@ async function providersPage(){
   const roleLabel=x=>x.role==="router"?"Routing model":x.role==="image"?"Image model":x.custom?"Custom answer provider":"Answer model";
   const displayName=x=>x.display_name||(x.name==="qwen_image"||x.name==="qwen_classifier"?"Qwen":x.name);
   const renderRows=(filter="")=>providers.filter(x=>`${displayName(x)} ${x.name} ${x.model} ${asList(x.models).join(" ")} ${x.base_url}`.toLowerCase().includes(filter.toLowerCase())).map(x=>{const models=asList(x.models).filter(Boolean);return `<section class="provider-connection"><div class="connection-head"><div class="provider-identity"><span class="provider-mark">${uiIcon("providers")}</span><div><h3>${esc(displayName(x))}</h3><span class="muted">${esc(roleLabel(x))}</span></div></div>${x.configured?(x.verified?statusBadge("Verified"):statusBadge("Needs test")):statusBadge("Not configured")}</div><div class="tag-list">${(models.length?models:[x.model]).filter(Boolean).map(m=>`<span class="model-chip">${esc(m)}${m===x.model&&x.active?' <span class="badge good">Default</span>':""}</span>`).join("")||'<span class="muted">No models configured</span>'}</div><div class="provider-endpoint">${esc(x.base_url||"Endpoint not configured")}</div><div class="connection-footer"><span class="muted">${x.configured?"Credentials saved securely":"Add your own API key"}</span><div class="table-actions">${x.selectable!==false&&x.configured?`<button class="btn small" data-use-provider="${esc(x.name)}" data-use-model="${esc(x.model||"")}">Use</button>`:""}${x.configured&&x.role!=="image"?`<button class="btn small" data-test-provider="${esc(x.name)}" data-test-model="${esc(x.model||"")}">Test</button>`:""}${x.role!=="router"?`<button class="btn small" data-manage-models="${esc(x.name)}">Models</button>`:""}${x.custom?`<button class="btn small danger" data-delete-provider="${esc(x.name)}">Delete</button>`:""}</div></div></section>`}).join("")||'<div class="empty-state"><strong>No matching providers</strong><span>Add a provider or adjust your search.</span></div>';
-  root.innerHTML=`<div class="page-toolbar"><div><strong>Provider connections</strong><span>Configure, test and select the live model source used by the gateway.</span></div><button class="btn primary" id="add-provider">＋ Add Provider</button></div><div class="kpi-grid">${kpi("Total Providers",providers.length,"Configured and custom sources","P","blue")}${kpi("Connected",providers.filter(x=>x.configured).length,"Available with credentials","✓","green")}${kpi("Routing Models",(r.models||[]).length,"Models available to auto routing","M","purple")}</div>${card("Active Provider",`<div class="hero-panel"><div><span class="eyebrow">Current default</span><h2>${esc(p.active?.provider||"-")}</h2><p>${esc(p.active?.model||"-")}</p></div>${statusBadge("Active")}</div>`)}${card("Providers",`<div class="page-toolbar compact-toolbar"><input id="provider-search" placeholder="Search providers or models…"><button class="btn" id="refresh-providers">Refresh</button></div><div id="provider-table"><div class="provider-connections">${renderRows()}</div></div>`)}${card("Routing Models",table(["Provider","Model","Enabled","Description"],(r.models||[]).map(x=>`<tr><td>${esc(x.provider==="qwen_image"?"Qwen":x.provider)}</td><td>${esc(x.model)}</td><td>${x.enabled?statusBadge("Enabled"):statusBadge("Disabled")}</td><td>${esc(x.description||"-")}</td></tr>`),"No routing models configured"))}<div id="provider-modal-root"></div>`;
+
+  const configured = providers.filter(provider => provider.configured);
+  const active = p.active?.provider && p.active?.model ? p.active : null;
+  if (!document.getElementById("add-provider")) document.getElementById("page-heading").insertAdjacentHTML("beforeend", '<button class="btn primary" type="button" id="add-provider">Add provider</button>');
+  root.innerHTML = `<div class="provider-summary">
+    <section class="panel provider-default">
+      <h2>Default route</h2>
+      ${active ? `<strong>${esc(active.provider)}</strong><code>${esc(active.model)}</code>` : '<p class="muted">Select a provider and model to set a default.</p>'}
+    </section>
+    <div class="kpi-grid">
+      ${kpi("Connections",num(configured.length),"Providers with saved credentials")}
+      ${kpi("Verified",num(configured.filter(provider => provider.verified).length),"Tested connections","","green")}
+      ${kpi("Routing models",num((r.models || []).filter(model => model.enabled).length),"Enabled for model selection","","purple")}
+    </div>
+  </div>
+  ${card("Provider connections", `<div class="page-toolbar compact-toolbar"><input id="provider-search" aria-label="Search providers or models" placeholder="Search providers or models…"><button class="btn" id="refresh-providers">Refresh</button></div><div id="provider-table"><div class="provider-connections">${renderRows()}</div></div>`)}
+  ${card("Routing models", table(["Provider","Model","Enabled","Description"], (r.models || []).map(model => `<tr><td>${esc(model.provider === "qwen_image" ? "Qwen" : model.provider)}</td><td>${esc(model.model)}</td><td>${statusBadge(model.enabled ? "Enabled" : "Disabled")}</td><td>${esc(model.description || "—")}</td></tr>`), "No routing models configured"))}
+  <div id="provider-modal-root"></div>`;
   const closeModal=()=>document.getElementById("provider-modal-root")?.replaceChildren();
   const runTest=async btn=>{const name=btn.dataset.testProvider,model=btn.dataset.testModel;btn.disabled=true;btn.textContent="Testing…";try{const d=await api("/api/providers/test",{method:"POST",body:JSON.stringify({name,model}),timeoutMs:30000});toast(`${name} connection succeeded · ${Number(d.latency_ms||0).toFixed(0)} ms`,"success")}catch(e){toast(`${name} test failed: ${e.message}`,"error")}finally{btn.disabled=false;btn.textContent="Test"}};
   const bindRows=()=>{root.querySelectorAll("[data-test-provider]").forEach(x=>x.onclick=()=>runTest(x));root.querySelectorAll("[data-use-provider]").forEach(x=>x.onclick=async()=>{try{await api("/api/settings",{method:"PATCH",body:JSON.stringify({default_provider:x.dataset.useProvider,default_model:x.dataset.useModel})});toast("Default provider updated","success");providersPage()}catch(e){toast(e.message,"error")}});root.querySelectorAll("[data-manage-models]").forEach(x=>x.onclick=()=>{const p=providers.find(v=>v.name===x.dataset.manageModels);if(!p)return;document.getElementById("provider-modal-root").innerHTML=`<div class="modal-backdrop"><div class="modal provider-modal"><button class="modal-close" id="close-models">×</button><div class="modal-head"><span class="eyebrow">Model management</span><h2>${esc(p.name)}</h2></div><p class="muted">Add models that use this provider's existing endpoint and credentials. Separate names with commas.</p><form id="models-form" class="settings-form"><label>Models<input id="managed-models" value="${esc((p.models||[]).join(", "))}" required></label><div id="models-status" class="muted"></div><div class="form-actions"><button type="button" class="btn" id="close-models-2">Cancel</button><button class="btn primary">Save models</button></div></form></div></div>`;const close=()=>document.getElementById("provider-modal-root")?.replaceChildren();document.getElementById("close-models").onclick=close;document.getElementById("close-models-2").onclick=close;document.getElementById("models-form").onsubmit=async e=>{e.preventDefault();const models=document.getElementById("managed-models").value.split(",").map(v=>v.trim()).filter(Boolean);try{await api(`/api/providers/${encodeURIComponent(p.name)}/models`,{method:"PATCH",body:JSON.stringify({models})});toast("Models updated","success");close();providersPage()}catch(err){document.getElementById("models-status").textContent=err.message}}});root.querySelectorAll("[data-delete-provider]").forEach(x=>x.onclick=async()=>{if(!confirm(`Delete ${x.dataset.deleteProvider}?`))return;try{await api(`/api/providers/${encodeURIComponent(x.dataset.deleteProvider)}`,{method:"DELETE"});toast("Provider deleted","success");providersPage()}catch(e){toast(e.message,"error")}})};
@@ -299,16 +552,115 @@ async function providersPage(){
   if(shouldOpenAdd){history.replaceState(null,"",location.pathname);document.getElementById("add-provider").click()}
  }catch(e){root.innerHTML=`<div class="error-panel"><h2>Providers unavailable</h2><p>${esc(e.message)}</p>${button("Retry","btn primary",'id="retry-providers"')}</div>`;document.getElementById("retry-providers")?.addEventListener("click",providersPage)}}
 
-async function metricsPage(){
- const root=document.getElementById("page-root");root.innerHTML=`<div class="loading">Loading analytics…</div>`;
- try{
-  const [runtime,history]=await Promise.all([api("/api/metrics/data").catch(()=>({})),api("/api/history?limit=500")]);const all=history.items||[];if(!all.length){root.innerHTML=`<div class="analytics-toolbar"><div><span class="eyebrow">Historical analytics</span><p class="muted">Analytics will appear here after this Workspace completes its first request.</p></div><button class="btn" id="analytics-refresh">Refresh</button></div>${card("No Data Yet",`<div class="empty-state"><div class="empty-icon">◌</div><strong>No usage data yet</strong><span>Connect a Provider and send your first Playground request to start tracking usage, cache performance and cost.</span><a class="btn primary" href="/pages/providers.html?add=1">Add Your First Provider</a></div>`)}`;document.getElementById("analytics-refresh").onclick=metricsPage;return}const activeTab=localStorage.getItem("ascg_analytics_tab")||"Overview";
-  const percentile=(values,p)=>{const v=values.filter(Number.isFinite).sort((a,b)=>a-b);if(!v.length)return 0;return v[Math.min(v.length-1,Math.ceil(v.length*p)-1)]};
-  const tabs=["Overview","Requests","Cache Performance","Token Usage","Cost Analysis","Provider Performance","Latency"];
-  root.innerHTML=`<div class="analytics-toolbar"><div><span class="eyebrow">Historical analytics</span><p class="muted">All values are calculated from persisted request history and live runtime metrics.</p></div><div class="toolbar-actions"><input id="analytics-from" type="date"><input id="analytics-to" type="date"><button class="btn" id="analytics-export">Export CSV</button><button class="btn" id="analytics-refresh">Refresh</button></div></div><div class="analytics-tabs">${tabs.map(x=>`<button class="settings-tab ${x===activeTab?"active":""}" data-analytics-tab="${esc(x)}">${esc(x)}</button>`).join("")}</div><div id="analytics-content"></div>`;
-  const render=()=>{const from=document.getElementById("analytics-from").value,to=document.getElementById("analytics-to").value;const records=all.filter(x=>{const day=String(x.created_at||"").slice(0,10);return(!from||day>=from)&&(!to||day<=to)});const h=metricsFromHistory(records);const m={...h,total_requests:Math.max(h.total_requests,Number(runtime.total_requests||0)),success_requests:Math.max(h.success_requests,Number(runtime.success_requests||0)),failed_requests:Math.max(h.failed_requests,Number(runtime.failed_requests||0)),total_tokens:Math.max(h.total_tokens,Number(runtime.total_tokens||0)),total_cost:Math.max(h.total_cost,Number(runtime.total_cost||0)),average_latency_ms:h.average_latency_ms||Number(runtime.average_latency_ms||0)};state.metrics=m;const hits=records.filter(x=>x.cache_hit),misses=records.length-hits.length,latencies=records.map(x=>Number(x.latency_ms||0)).filter(x=>x>0),providerMap={};records.forEach(x=>{const key=x.provider||"unknown";providerMap[key]??={requests:0,errors:0,tokens:0,cost:0,latencies:[]};providerMap[key].requests++;providerMap[key].errors+=String(x.status||"").toLowerCase()==="error"?1:0;providerMap[key].tokens+=Number(x.total_tokens||0);providerMap[key].cost+=Number(x.cost||0);if(Number(x.latency_ms)>0)providerMap[key].latencies.push(Number(x.latency_ms))});const trend=historyCharts(records);const providerRows=Object.entries(providerMap).map(([name,x])=>`<tr><td>${esc(name)}</td><td>${num(x.requests)}</td><td>${num(x.errors)}</td><td>${num(x.tokens)}</td><td>${money(x.cost)}</td><td>${x.latencies.length?Number(x.latencies.reduce((a,b)=>a+b,0)/x.latencies.length).toFixed(2):"0.00"} ms</td></tr>`).join("");const costRows=Object.entries(providerMap).sort((a,b)=>b[1].cost-a[1].cost).map(([name,x])=>`<div class="metric-list"><div><span>${esc(name)}</span><strong>${money(x.cost)}</strong></div></div>`).join("");let content=`<div class="kpi-grid">${kpi("Requests",num(m.total_requests),"Filtered history","R","blue")}${kpi("Successful",num(m.success_requests),"Completed requests","✓","green")}${kpi("Failed",num(m.failed_requests),"Failed requests","!","gold")}${kpi("Tokens",num(m.total_tokens),"Recorded token usage","T","cyan")}${kpi("Cost",money(m.total_cost),"USD","$","purple")}${kpi("Avg Latency",`${Number(m.average_latency_ms||0).toFixed(2)} ms`,"Recorded average","◷","slate")}</div>`;if(activeTab==="Overview")content+=`<div class="two-col">${card("Request & Provider Metrics",`<div class="metric-list"><div><span>Gateway requests</span><strong>${num(m.total_requests)}</strong></div><div><span>Gateway errors</span><strong>${num(m.failed_requests)}</strong></div><div><span>Gateway error rate</span><strong>${pct(m.total_requests?m.failed_requests/m.total_requests*100:0)}</strong></div><div><span>Cache hit rate</span><strong>${pct(records.length?hits.length/records.length*100:0)}</strong></div></div>`)}${card("AI Insights",`<div class="insight-list"><p>${records.length?`Cache served ${num(hits.length)} of ${num(records.length)} requests.`:"No records match the selected date range."}</p><p>${m.total_cost?`Recorded provider cost is ${money(m.total_cost)} for ${num(m.total_tokens)} tokens.`:"No provider cost has been recorded yet."}</p></div>`)}</div>${card("Request Trend",trend.requests)}${card("Token Usage & Cost Trend",trend.usage)}`;if(activeTab==="Requests")content+=card("Requests",table(["Request","Question","Provider","Model","Cache","Tokens","Cost"],records.map(x=>`<tr><td class="mono">${esc(short(x.request_id,18))}</td><td>${esc(short(x.question,75))}</td><td>${esc(x.provider||"-")}</td><td>${esc(x.model||"-")}</td><td>${statusBadge(x.cache_hit?x.cache_type||"hit":"miss")}</td><td>${num(x.total_tokens)}</td><td>${money(x.cost)}</td></tr>`),"No requests in this range"));if(activeTab==="Cache Performance")content+=`<div class="two-col">${card("Cache Hit Rate",`<div class="donut-layout">${donut(hits.length,misses)}<div class="metric-list"><div><span>Exact hits</span><strong>${num(records.filter(x=>x.cache_type==="exact").length)}</strong></div><div><span>Semantic hits</span><strong>${num(records.filter(x=>x.cache_type==="semantic").length)}</strong></div><div><span>Misses</span><strong>${num(misses)}</strong></div></div></div>`)}${card("Cache Savings",`<div class="metric-list"><div><span>Saved tokens</span><strong>${num(records.reduce((n,x)=>n+Number(x.saved_tokens||0),0))}</strong></div><div><span>Saved cost</span><strong>${money(records.reduce((n,x)=>n+Number(x.saved_cost||0),0))}</strong></div></div>`)}</div>`;if(activeTab==="Token Usage")content+=card("Token Usage Trend",trend.usage);if(activeTab==="Cost Analysis")content+=`<div class="two-col">${card("Cost by Provider",costRows||`<div class="empty-mini">No cost data.</div>`)}${card("Prometheus",`<p class="muted">Runtime metrics remain available for monitoring systems.</p><a class="btn" href="/metrics" target="_blank">Open metrics endpoint ↗</a>`)}</div>`;if(activeTab==="Provider Performance")content+=card("Provider Performance",table(["Provider","Requests","Errors","Tokens","Cost","Avg Latency"],providerRows,"No provider data"));if(activeTab==="Latency")content+=card("Latency Percentiles",`<div class="kpi-grid">${kpi("P50",`${Number(percentile(latencies,.5)).toFixed(2)} ms`,"Median latency","P","blue")}${kpi("P95",`${Number(percentile(latencies,.95)).toFixed(2)} ms`,"Tail latency","95","gold")}${kpi("P99",`${Number(percentile(latencies,.99)).toFixed(2)} ms`,"Worst tail","99","red")}</div>${lineChart(records.map(x=>({v:Number(x.latency_ms||0)})),"Latency ms")}`);document.getElementById("analytics-content").innerHTML=content};
-  ["analytics-from","analytics-to"].forEach(id=>document.getElementById(id).onchange=render);root.querySelectorAll("[data-analytics-tab]").forEach(x=>x.onclick=()=>{localStorage.setItem("ascg_analytics_tab",x.dataset.analyticsTab);metricsPage()});document.getElementById("analytics-refresh").onclick=metricsPage;document.getElementById("analytics-export").onclick=()=>{const cols=["request_id","provider","model","cache_type","total_tokens","cost","latency_ms","created_at"];const quote=value=>'"'+String(value??"").replace(/"/g,'""')+'"';const csv=[cols.join(","),...all.map(x=>cols.map(k=>quote(x[k])).join(","))].join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));const link=document.createElement("a");link.href=url;link.download="gateway-analytics.csv";link.click();URL.revokeObjectURL(url)};render();
- }catch(e){root.innerHTML=`<div class="error-panel"><h2>Analytics unavailable</h2><p>${esc(e.message)}</p>${button("Retry","btn primary",'id="retry-analytics"')}</div>`;document.getElementById("retry-analytics")?.addEventListener("click",metricsPage)}}
+
+async function metricsPage() {
+  const root = document.getElementById("page-root");
+  root.innerHTML = '<div class="loading" role="status">Loading analytics…</div>';
+  try {
+    const history = await api("/api/history?limit=500");
+    const all = history.items || [];
+    const tabs = ["Overview","Requests","Cache Performance","Token Usage","Cost Analysis","Provider Performance","Latency"];
+    const savedTab = localStorage.getItem("ascg_analytics_tab");
+    let active = tabs.includes(savedTab) ? savedTab : tabs[0];
+    root.innerHTML = `<div class="analytics-toolbar history-filter">
+      <div><strong>Workspace history</strong><p class="muted">Up to 500 recent requests. Dates use UTC.</p><p class="muted" id="analytics-count" role="status"></p></div>
+      <div class="toolbar-actions analytics-actions">
+        <label>From <input id="analytics-from" type="date"></label>
+        <label>Through <input id="analytics-to" type="date"></label>
+        <button class="btn" id="analytics-export">Export CSV</button>
+        <button class="btn" id="analytics-refresh">Refresh</button>
+      </div>
+    </div>
+    <div class="analytics-tabs" aria-label="Analytics views">${tabs.map(tab => `<button type="button" class="settings-tab" data-analytics-tab="${esc(tab)}">${esc(tab)}</button>`).join("")}</div>
+    <div id="analytics-content"></div>`;
+    const from = document.getElementById("analytics-from");
+    const through = document.getElementById("analytics-to");
+    const exportButton = document.getElementById("analytics-export");
+    const filtered = () => all.filter(record => {
+      if (!from.value && !through.value) return true;
+      const day = historyDate(record.created_at);
+      return day && (!from.value || day >= from.value) && (!through.value || day <= through.value);
+    });
+    const render = () => {
+      const records = filtered();
+      const metrics = metricsFromHistory(records);
+      const {latencies, cache} = metrics;
+      const content = document.getElementById("analytics-content");
+      document.getElementById("analytics-count").textContent = `${num(records.length)} of ${num(all.length)} loaded requests`;
+      exportButton.disabled = !records.length;
+      root.querySelectorAll("[data-analytics-tab]").forEach(tab => {
+        const current = tab.dataset.analyticsTab === active;
+        tab.classList.toggle("active", current);
+        tab.setAttribute("aria-pressed", String(current));
+      });
+      if (!records.length) {
+        const empty = all.length ? "No requests match the selected dates." : "Usage appears here after your first recorded request.";
+        content.innerHTML = card("No request data", `<div class="empty-state"><strong>${esc(empty)}</strong>${all.length ? "" : '<a class="btn" href="/pages/playground.html">Open Playground</a>'}</div>`);
+        return;
+      }
+      const trend = historyCharts(records);
+      const providers = new Map();
+      for (const record of records) {
+        if (record.cache_hit || !record.provider) continue;
+        if (!providers.has(record.provider)) providers.set(record.provider, []);
+        providers.get(record.provider).push(record);
+      }
+      const providerMetrics = [...providers].map(([provider, entries]) => [provider, metricsFromHistory(entries)]);
+
+      const cacheCard = () => card("Cache outcomes", `<div class="cache-hero-value"><strong>${cache.hit_rate == null ? "—" : pct(cache.hit_rate)}</strong><span>cache hit rate</span></div>${cacheBreakdown(cache)}`);
+      const overview = () => `<div class="analytics-overview">
+        ${card("Request volume", trend.requests)}
+        ${cacheCard()}
+      </div>
+      ${card("Token usage and cost", trend.usage)}`;
+      const reports = {
+        "Overview": overview,
+        "Requests": () => card("Recorded requests", table(["Request","Provider","Model","Cache","Tokens","Cost"], records.map(record => `<tr><td><button class="btn small" type="button" data-request-detail="${esc(record.request_id)}">${esc(short(record.request_id, 25))}</button></td><td>${esc(record.provider || "—")}</td><td>${esc(record.model || "—")}</td><td>${cacheBadge(record)}</td><td>${num(record.consumed_tokens ?? record.total_tokens)}</td><td>${moneyShort(record.cost)}</td></tr>`))),
+        "Cache Performance": () => `<div class="two-col">${cacheCard()}${card("Estimated savings", `<div class="metric-list"><div><span>Saved tokens</span><strong>${num(records.reduce((sum, item) => sum + (Number(item.saved_tokens) || 0), 0))}</strong></div><div><span>Saved cost when recorded</span><strong>${records.some(item => item.saved_cost != null) ? moneyShort(records.reduce((sum, item) => sum + (Number(item.saved_cost) || 0), 0)) : "—"}</strong></div></div>`)}</div>`,
+        "Token Usage": () => card("Tokens over time", bucketChart(records, "Tokens", record => Number(record.consumed_tokens ?? record.total_tokens) || 0)),
+        "Cost Analysis": () => `<div class="two-col">
+          ${card("Cost over time", bucketChart(records, "Cost", record => Number(record.cost) || 0, moneyShort))}
+          ${card("Cost by provider", table(["Provider","Recorded cost"], providerMetrics.sort((a,b) => b[1].total_cost - a[1].total_cost).map(([provider, value]) => `<tr><td>${esc(provider)}</td><td>${moneyShort(value.total_cost)}</td></tr>`), "No provider cost in this range."))}
+        </div>${state.user?.is_admin ? '<a class="btn" href="/metrics" target="_blank" rel="noopener noreferrer">Open Prometheus metrics</a>' : ""}`,
+        "Provider Performance": () => card("Requests attributed to providers", table(["Provider","Requests","Errors","Tokens","Cost","Mean latency"], providerMetrics.map(([provider, value]) => `<tr><td>${esc(provider)}</td><td>${num(value.total_requests)}</td><td>${num(value.failed_requests)}</td><td>${num(value.total_tokens)}</td><td>${moneyShort(value.total_cost)}</td><td>${latencyLabel(value.average_latency_ms)}</td></tr>`), "No provider requests in this range.")),
+        "Latency": () => card("Latency percentiles", `<div class="kpi-grid latency-kpis">${[[.5,"P50","Median"],[.95,"P95","95th percentile"],[.99,"P99","99th percentile"]].map(([p, label, hint]) => kpi(label, latencyLabel(latencies.length ? percentile(latencies, p) : null), hint)).join("")}</div>`),
+      };
+      content.innerHTML = `<div class="kpi-grid analytics-kpis">
+        ${kpi("Requests",num(metrics.total_requests),`${num(metrics.failed_requests)} failed`)}
+        ${kpi("Used tokens",num(metrics.total_tokens),"Recorded usage","","cyan")}
+        ${kpi("Recorded cost",moneyShort(metrics.total_cost),"USD","","gold")}
+        ${kpi("Mean latency",latencyLabel(metrics.average_latency_ms),`${num(latencies.length)} measured requests`,"","purple")}
+      </div>${reports[active]()}`;
+      content.querySelectorAll("[data-request-detail]").forEach(trigger => {
+        trigger.onclick = () => showRequest(trigger.dataset.requestDetail);
+      });
+    };
+    from.onchange = through.onchange = render;
+    root.querySelectorAll("[data-analytics-tab]").forEach(tab => {
+      tab.onclick = () => {
+        active = tab.dataset.analyticsTab;
+        localStorage.setItem("ascg_analytics_tab", active);
+        render();
+      };
+    });
+    document.getElementById("analytics-refresh").onclick = metricsPage;
+    exportButton.onclick = () => {
+      const columns = ["request_id","provider","model","cache_type","total_tokens","cost","latency_ms","created_at"];
+      const quote = value => '"' + String(value ?? "").replace(/"/g, '""') + '"';
+      const csv = [columns.join(","), ...filtered().map(record => columns.map(key => quote(record[key])).join(","))].join("\n");
+      const url = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "gateway-analytics.csv";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    render();
+  } catch (error) {
+    root.innerHTML = `<div class="error-panel"><h2>Analytics unavailable</h2><p>${esc(error.message)}</p>${button("Retry","btn primary",'id="retry-analytics"')}</div>`;
+    document.getElementById("retry-analytics").onclick = metricsPage;
+  }
+}
 
 async function systemPage(){
  const root=document.getElementById("page-root");
@@ -321,7 +673,7 @@ async function systemPage(){
    api("/cache/stats").catch(e=>({error:e.message}))
   ]);
   const app=s.application||{}, r=s.redis||{};
-  root.innerHTML=`<div class="system-banner ${h?.status==="ok"||h?.status==="healthy"?"good":"warn"}"><div><span class="eyebrow">Runtime diagnostics</span><h2>${esc(app.name||"AI Semantic Cache Gateway")}</h2></div><span>${r.connected?"Redis connected":"Redis unavailable"}</span></div><div class="two-col">${card("Application & Gateway",`<div class="detail-grid compact"><div><span>Name</span><strong>${esc(app.name||"-")}</strong></div><div><span>Version</span><strong>${esc(app.version||"-")}</strong></div><div><span>Provider</span><strong>${esc((await Promise.resolve(state.dashboard?.provider?.name))||"-")}</strong></div><div><span>Model</span><strong>${esc(state.dashboard?.provider?.model||"-")}</strong></div><div><span>Python</span><strong>${esc(s.runtime?.python||"-")}</strong></div><div><span>Platform</span><strong>${esc(s.runtime?.platform||"-")}</strong></div></div>`)}${card("Redis / Cache",`<div class="detail-grid compact"><div><span>Connected</span><strong>${r.connected?"Yes":"No"}</strong></div><div><span>Host</span><strong>${esc(r.host||"-")}</strong></div><div><span>Port</span><strong>${esc(r.port??"-")}</strong></div><div><span>Index</span><strong>${esc(r.index||"-")}</strong></div><div><span>Algorithm</span><strong>${esc(r.algorithm||"-")}</strong></div><div><span>Distance</span><strong>${esc(r.distance_metric||"-")}</strong></div><div><span>Vector Dimension</span><strong>${esc(r.vector_dimension??"-")}</strong></div><div><span>Threshold</span><strong>${esc(s.cache?.threshold??"-")}</strong></div></div>`)}</div>${card("Embedding & Runtime",`<div class="detail-grid compact"><div><span>Embedding model</span><strong>${esc(s.embedding?.model||"-")}</strong></div><div><span>Python</span><strong>${esc(s.runtime?.python||"-")}</strong></div><div><span>Platform</span><strong>${esc(s.runtime?.platform||"-")}</strong></div></div>`)}${card("Lifecycle",`<pre class="code-block">${esc(json(l))}</pre>`)}${card("Health",`<pre class="code-block">${esc(json(h))}</pre>`)}${card("Cache Stats",`<pre class="code-block">${esc(json(c))}</pre>`)}`;
+  root.innerHTML=`<div class="system-banner ${h?.status==="ok"||h?.status==="healthy"?"good":"warn"}"><div><span class="eyebrow">Runtime diagnostics</span><h2>${esc(app.name||s.gateway?.name||"AI Semantic Cache Gateway")}</h2></div><span>${r.connected?"Redis connected":"Redis unavailable"}</span></div><div class="two-col">${card("Application & Gateway",`<div class="detail-grid compact"><div><span>Name</span><strong>${esc(app.name||s.gateway?.name||"—")}</strong></div><div><span>Version</span><strong>${esc(app.version||s.gateway?.version||"—")}</strong></div><div><span>Provider</span><strong>${esc(s.gateway?.provider||"—")}</strong></div><div><span>Model</span><strong>${esc(s.gateway?.model||"—")}</strong></div><div><span>Python</span><strong>${esc(s.runtime?.python||"-")}</strong></div><div><span>Platform</span><strong>${esc(s.runtime?.platform||"-")}</strong></div></div>`)}${card("Redis / Cache",`<div class="detail-grid compact"><div><span>Connected</span><strong>${r.connected?"Yes":"No"}</strong></div><div><span>Host</span><strong>${esc(r.host||"-")}</strong></div><div><span>Port</span><strong>${esc(r.port??"-")}</strong></div><div><span>Index</span><strong>${esc(r.index_name||r.index||"—")}</strong></div><div><span>Algorithm</span><strong>${esc(r.algorithm||"-")}</strong></div><div><span>Distance</span><strong>${esc(r.distance_metric||"-")}</strong></div><div><span>Vector Dimension</span><strong>${esc(r.vector_dim??r.vector_dimension??"—")}</strong></div><div><span>Threshold</span><strong>${esc(s.cache?.threshold??c.threshold??"—")}</strong></div></div>`)}</div>${card("Embedding & Runtime",`<div class="detail-grid compact"><div><span>Embedding model</span><strong>${esc(s.embedding?.model||"-")}</strong></div><div><span>Python</span><strong>${esc(s.runtime?.python||"-")}</strong></div><div><span>Platform</span><strong>${esc(s.runtime?.platform||"-")}</strong></div></div>`)}${card("Lifecycle",`<pre class="code-block">${esc(json(l))}</pre>`)}${card("Health",`<pre class="code-block">${esc(json(h))}</pre>`)}${card("Cache Stats",`<pre class="code-block">${esc(json(c))}</pre>`)}`;
  }catch(e){root.innerHTML=`<div class="error-panel"><h2>System unavailable</h2><p>${esc(e.message)}</p></div>`}
 }
 
@@ -344,10 +696,11 @@ async function settingsPage(){
  const root=document.getElementById("page-root");root.innerHTML=`<div class="loading">Loading settings…</div>`;
  try{
   const [d,p,r]=await Promise.all([api("/api/settings"),api("/api/providers"),api("/api/routing/models")]);
-  state.settings=d;
+
   const c=d.cache||{},a=d.ai_configuration||{},g=d.general||{},l=d.logging||{},sec=d.security||{},n=d.notifications||{};
   const sections=["General","AI Configuration","Cache Settings","Database","Logging","Security","Notification","About"];
-  const active=localStorage.getItem("ascg_settings_section")||"General";
+  const preferred = new URLSearchParams(location.search).get("section") || localStorage.getItem("ascg_settings_section");
+  const active = sections.includes(preferred) ? preferred : sections[0];
   const providerOptions=(p.providers||[]).filter(x=>(x.configured||x.active)&&x.selectable!==false).map(x=>`<option value="${esc(x.name)}" ${x.name===a.default_provider?"selected":""}>${esc(x.display_name||x.name)}</option>`).join("");
   const modelOptions=(r.models||[]).filter(x=>x.provider===a.default_provider).map(x=>`<option value="${esc(x.model)}" ${x.model===a.default_model?"selected":""}>${esc(x.model)}</option>`).join("");
   const info=(title,value)=>`<div class="setting-info"><span>${esc(title)}</span><strong>${esc(value??"-")}</strong></div>`;
@@ -356,14 +709,14 @@ async function settingsPage(){
    if(active==="General")return form(`<div class="field-grid"><label>Application name<input id="set-app-name" value="${esc(g.app_name||d.application?.name||"")}" required></label><label>Environment<input value="${esc(g.environment||"development")}" disabled></label><label>Version<input value="${esc(g.version||d.application?.version||"")}" disabled></label><label>API port<input value="${esc(d.application?.port||8000)}" disabled></label></div><p class="muted">Application name is stored in the gateway runtime configuration. Environment and port are read-only process settings.</p>`);
    if(active==="AI Configuration")return form(`<div class="field-grid"><label>Default provider<select id="set-provider">${providerOptions||`<option value="">No configured provider</option>`}</select></label><label>Default model<select id="set-model">${modelOptions||`<option value="${esc(a.default_model||"")}">${esc(a.default_model||"No configured model")}</option>`}</select></label><label>Request timeout (seconds)<input id="set-timeout" type="number" min="1" max="600" value="${esc(a.timeout??d.llm?.timeout??30)}"></label><label>Max retries<input id="set-retries" type="number" min="0" max="5" value="${esc(a.max_retries??d.llm?.max_retries??0)}"></label></div><div class="setting-list">${info("Cost tracking",a.cost_tracking?"Enabled":"Disabled")}${info("Configured providers",(p.providers||[]).filter(x=>x.configured).length)}</div>`);
    if(active==="Cache Settings")return form(`<div class="toggle-list"><label class="check"><input id="set-exact" type="checkbox" ${c.exact_enabled!==false?"checked":""}> Enable Exact Cache</label><label class="check"><input id="set-semantic" type="checkbox" ${c.semantic_enabled!==false?"checked":""}> Enable Semantic Cache</label></div><div class="field-grid"><label>Similarity threshold<input id="set-threshold" type="number" min="0" max="1" step="0.01" value="${esc(Number(c.threshold??0.75).toFixed(2))}"></label><label>Cache TTL (seconds)<input id="set-ttl" type="number" min="60" max="604800" value="${esc(c.ttl??86400)}"></label><label>Max cached answer length<input id="set-max-answer" type="number" min="256" max="200000" value="${esc(c.max_answer_length??20000)}"></label><label>Embedding model<input value="${esc(d.embedding?.model||"")}" disabled></label></div><div class="setting-list">${info("Redis",d.redis?.connected?"Connected":"Unavailable")}${info("Vector index",c.index_name)}${info("Distance metric",c.distance_metric)}${info("Vector dimension",c.vector_dimension)}</div>`);
-   if(active==="Database")return `${card("Database",`<div class="setting-list">${info("Engine",d.database?.type)}${info("Path",d.database?.path)}${info("Status",d.database?.status)}${info("Recorded requests",state.requests?.length||"Available through Requests")}</div><p class="muted">This project uses SQLite for request history. Redis remains the cache and vector-search backend.</p><div class="form-actions"><a class="btn" href="/pages/requests.html">Open Request History</a><button class="btn danger" id="settings-clear-history" type="button">Clear History</button></div>`)}${card("Redis Connection",`<div class="setting-list">${info("Host",d.redis?.host)}${info("Port",d.redis?.port)}${info("Status",d.redis?.connected?"Connected":"Unavailable")}</div>`)}`;
+   if(active==="Database")return `${card("Database",`<div class="setting-list">${info("Engine",d.database?.type)}${info("Path",d.database?.path)}${info("Status",d.database?.status)}${info("Recorded requests","Available through Requests")}</div><p class="muted">This project uses SQLite for request history. Redis remains the cache and vector-search backend.</p><div class="form-actions"><a class="btn" href="/pages/requests.html">Open Request History</a><button class="btn danger" id="settings-clear-history" type="button">Clear History</button></div>`)}${card("Redis Connection",`<div class="setting-list">${info("Host",d.redis?.host)}${info("Port",d.redis?.port)}${info("Status",d.redis?.connected?"Connected":"Unavailable")}</div>`)}`;
    if(active==="Logging")return form(`<div class="field-grid"><label>Log level<select id="set-log-level">${["DEBUG","INFO","WARNING","ERROR","CRITICAL"].map(x=>`<option ${String(l.level||"INFO").toUpperCase()===x?"selected":""}>${x}</option>`).join("")}</select></label><label>Log file<input id="set-log-file" value="${esc(l.file||"logs/gateway.log")}"></label></div><label class="check"><input id="set-log-file-enabled" type="checkbox" ${l.to_file?"checked":""}> Write application logs to file</label><p class="muted">Changes apply to the running process and are retained in the runtime settings file.</p>`);
    if(active==="Security")return form(`<div class="setting-list">${info("Authentication",sec.auth_enabled?"Enabled":"Not configured")}${info("Secret key",sec.secret_configured?"Configured":"Missing")}</div><div class="field-grid"><label>Access token expiration (hours)<input id="set-token-hours" type="number" min="1" max="720" value="${esc(sec.token_expiration_hours||24)}"></label></div><p class="muted">API secret keys remain in environment variables and are never shown or saved by this page.</p>`);
    if(active==="Notification")return form(`<div class="setting-list">${info("SMTP",n.smtp_configured?"Configured":"Not configured")}${info("From email",n.from_email||"-")}</div><label class="check"><input id="set-notifications" type="checkbox" ${n.enabled?"checked":""}> Enable notification hooks</label><p class="muted">Email delivery still requires SMTP credentials in the backend environment.</p>`);
    return card("About",`<div class="setting-list">${info("Application",d.about?.name||d.application?.name)}${info("Version",d.about?.version||d.application?.version)}${info("Embedding model",d.embedding?.model)}${info("Runtime",g.environment||"development")}</div><h3>Enabled capabilities</h3><div class="tag-list">${(d.about?.features||[]).map(x=>`<span class="badge good">${esc(x)}</span>`).join("")}</div><p class="muted">The Settings page now reflects the live gateway configuration. Provider secrets and process-only values remain protected.</p>`);
   };
   root.innerHTML=`<div class="settings-layout"><aside class="settings-nav"><div class="eyebrow">Gateway settings</div>${sections.map(x=>`<button class="settings-tab ${x===active?"active":""}" data-settings-section="${esc(x)}">${esc(x)}</button>`).join("")}</aside><div class="settings-content"><div class="settings-heading"><div><span class="eyebrow">Configuration</span><h2>${esc(active)}</h2><p>Manage the live gateway behavior and inspect connected services.</p></div><button class="btn" id="settings-refresh">Refresh</button></div>${body()}</div></div>`;
-  root.querySelectorAll("[data-settings-section]").forEach(button=>button.onclick=()=>{localStorage.setItem("ascg_settings_section",button.dataset.settingsSection);settingsPage()});
+  root.querySelectorAll("[data-settings-section]").forEach(button=>button.onclick=()=>{localStorage.setItem("ascg_settings_section",button.dataset.settingsSection);const url=new URL(location.href);url.searchParams.set("section",button.dataset.settingsSection);history.replaceState(null,"",url);settingsPage()});
   document.getElementById("settings-refresh").onclick=settingsPage;
   const provider=document.getElementById("set-provider"),model=document.getElementById("set-model");
   provider?.addEventListener("change",()=>{const options=(r.models||[]).filter(x=>x.provider===provider.value);model.innerHTML=options.map(x=>`<option value="${esc(x.model)}">${esc(x.model)}</option>`).join("")});
@@ -372,17 +725,157 @@ async function settingsPage(){
   if(settingsForm){const discard=document.getElementById("settings-discard"),dirty=document.getElementById("settings-dirty");const markDirty=()=>{discard.disabled=false;dirty.textContent="Unsaved changes"};settingsForm.querySelectorAll("input,select").forEach(field=>field.addEventListener("input",markDirty));discard?.addEventListener("click",settingsPage);settingsForm.addEventListener("submit",async event=>{event.preventDefault();const payload={};if(active==="General")payload.app_name=document.getElementById("set-app-name").value.trim();if(active==="AI Configuration"){payload.default_provider=provider.value;payload.default_model=model.value;payload.llm_timeout=Number(document.getElementById("set-timeout").value);payload.llm_max_retries=Number(document.getElementById("set-retries").value)}if(active==="Cache Settings"){payload.exact_cache_enabled=document.getElementById("set-exact").checked;payload.semantic_cache_enabled=document.getElementById("set-semantic").checked;payload.cache_threshold=Number(document.getElementById("set-threshold").value);payload.cache_ttl=Number(document.getElementById("set-ttl").value);payload.cache_max_answer_length=Number(document.getElementById("set-max-answer").value)}if(active==="Logging"){payload.log_level=document.getElementById("set-log-level").value;payload.log_file=document.getElementById("set-log-file").value.trim();payload.log_to_file=document.getElementById("set-log-file-enabled").checked}if(active==="Security")payload.auth_token_expiration_hours=Number(document.getElementById("set-token-hours").value);if(active==="Notification")payload.notifications_enabled=document.getElementById("set-notifications").checked;try{await api("/api/settings",{method:"PATCH",body:JSON.stringify(payload)});toast("Settings saved","success");settingsPage()}catch(e){toast(e.message,"error")}})}
  }catch(e){root.innerHTML=`<div class="error-panel"><h2>Settings unavailable</h2><p>${esc(e.message)}</p>${button("Retry","btn primary",'id="retry-settings"')}</div>`;document.getElementById("retry-settings")?.addEventListener("click",settingsPage)}}
 
-async function playgroundPage(){
- const root=document.getElementById("page-root");root.innerHTML=`<div class="loading">Loading playground…</div>`;
- try{const [models,onboarding]=await Promise.all([api("/api/routing/models"),api("/api/onboarding")]);if(!onboarding.configured_provider_count||!onboarding.verified_provider_count||!(models.models||[]).length){const needsVerification=Boolean(onboarding.configured_provider_count);root.innerHTML=`<div class="empty-state playground-onboarding"><div class="empty-icon">✦</div><strong>${needsVerification?"Verify your provider before using Playground":"Add a provider to start using Playground"}</strong><p>${needsVerification?"Test the saved Provider connection first. Once it is verified, this workspace can route requests securely.":"Connect your own AI Provider API key to unlock text and image requests."}</p><a class="btn primary" href="${needsVerification?"/pages/providers.html":"/pages/providers.html?add=1"}">${needsVerification?"Verify Provider":"Add Your First Provider"}</a></div>`;return}const opts=(models.models||[]).map(x=>`<option value="${esc(x.model)}">${esc(x.provider==="qwen_image"?"Qwen":x.provider)} · ${esc(x.model)}</option>`).join("");root.innerHTML=`
- <div class="pg-tabs"><button class="pg-tab active" data-tab="chat">Chat</button><button class="pg-tab" data-tab="raw">Raw Request</button><button class="pg-tab" data-tab="routing">Routing Preview</button><button class="pg-tab" data-tab="batch">Batch Test</button></div>
- <div id="pg-tab-content"></div>`;renderPgTab("chat",opts);document.querySelectorAll(".pg-tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".pg-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");renderPgTab(b.dataset.tab,opts)})}catch(e){root.innerHTML=`<div class="error-panel"><h2>Playground unavailable</h2><p>${esc(e.message)}</p></div>`}}
-function renderPgTab(tab,opts){const root=document.getElementById("pg-tab-content");if(tab==="chat")renderChat(root,opts);if(tab==="raw")renderRaw(root);if(tab==="routing")renderRouting(root);if(tab==="batch")renderBatch(root)}
-function pgShell(left,center,right){return `<div class="playground-layout"><div class="pg-left">${left}</div><div class="pg-center">${center}</div><div class="pg-right">${right}</div></div>`}
-function renderRaw(root){root.innerHTML=pgShell(card("Raw Request",`<label>JSON request body<textarea id="raw-json" rows="24">${esc(json({model:"auto",messages:[{role:"user",content:""}],user:state.user?.email||null}))}</textarea></label><div class="form-actions"><button class="btn primary" id="raw-send">Send Raw Request</button></div>`),card("Response",`<pre id="raw-response" class="code-block">No response yet.</pre>`),card("Endpoint",`<div class="endpoint-card"><span>POST</span><code>/api/playground</code></div><p class="muted">This tab sends the JSON directly to the current backend endpoint.</p>`));document.getElementById("raw-send").onclick=async()=>{const button=document.getElementById("raw-send");try{const body=JSON.parse(document.getElementById("raw-json").value);button.disabled=true;button.textContent="Waiting for model…";const d=await api("/api/playground",{method:"POST",body:JSON.stringify(body),timeoutMs:120000});document.getElementById("raw-response").textContent=json(d);toast("Request completed","success")}catch(e){document.getElementById("raw-response").textContent=e.message;toast(e.message,"error")}finally{button.disabled=false;button.textContent="Send Raw Request"}}}
-function renderRouting(root){root.innerHTML=pgShell(card("Routing Preview",`<label>Message<textarea id="route-message" rows="14" placeholder="Enter a request to inspect routing…"></textarea></label><button class="btn primary" id="route-run">Preview Routing</button>`),card("Decision",`<div id="route-result" class="response-empty">No routing decision yet.</div>`),card("How this works",`<div class="empty-mini">The preview calls the live /api/routing/diagnostics endpoint. No sample request is inserted.</div>`));document.getElementById("route-run").onclick=async()=>{const text=document.getElementById("route-message").value.trim();if(!text)return toast("Enter a message first","error");try{const d=await api("/api/routing/diagnostics",{method:"POST",body:JSON.stringify({messages:[{role:"user",content:text}]})});document.getElementById("route-result").innerHTML=`<div class="route-result"><strong>${esc(d.selected?.provider||"-")} · ${esc(d.selected?.model||"-")}</strong><span>Score ${esc(d.selected?.score??"-")} · Confidence ${esc(d.selected?.confidence??"-")}</span><div>${(d.selected?.reasons||[]).map(x=>`<p>• ${esc(x)}</p>`).join("")}</div></div>`}catch(e){toast(e.message,"error")}}}
-function renderBatch(root){root.innerHTML=pgShell(card("Batch Test",`<label>Requests<textarea id="batch-input" rows="18" placeholder="Enter one user request per line…"></textarea></label><div class="form-actions"><button class="btn primary" id="batch-run">Run Batch</button></div>`),card("Batch Results",`<div id="batch-results" class="response-empty">No batch run yet.</div>`),card("Batch Status",`<div class="empty-mini">Requests are sent sequentially through the existing /api/playground endpoint. No fake results are generated.</div>`));document.getElementById("batch-run").onclick=runBatch}
-async function runBatch(){const lines=document.getElementById("batch-input").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);if(!lines.length)return toast("Enter at least one request","error");const out=document.getElementById("batch-results");out.innerHTML=`<div class="loading">Running ${lines.length} requests…</div>`;const results=[];for(const text of lines){try{const d=await api("/api/playground",{method:"POST",body:JSON.stringify({model:"auto",messages:[{role:"user",content:text}],user:state.user?.email||null}),timeoutMs:120000});const r=d.response||d;results.push({text,ok:true,result:r})}catch(e){results.push({text,ok:false,error:e.message})}out.innerHTML=results.map(x=>`<div class="batch-row"><div><strong>${esc(short(x.text,100))}</strong><span>${x.ok?esc(x.result.cache_type|| (x.result.cache_hit?"Hit":"Completed")):esc(x.error)}</span></div>${statusBadge(x.ok?"OK":"Error")}</div>`).join("")}}
+
+const PLAYGROUND_TABS = [
+  ["chat","Chat","playground"],
+  ["raw","Raw Request","code"],
+  ["routing","Routing Preview","route"],
+  ["batch","Batch Test","layers"],
+];
+
+async function playgroundPage() {
+  const root = document.getElementById("page-root");
+  root.innerHTML = '<div class="loading" role="status">Loading Playground…</div>';
+  try {
+    const [models, onboarding] = await Promise.all([api("/api/routing/models"), api("/api/onboarding")]);
+    if (!onboarding.configured_provider_count || !onboarding.verified_provider_count || !(models.models || []).length) {
+      const needsVerification = Boolean(onboarding.configured_provider_count);
+      root.innerHTML = `<div class="empty-state playground-onboarding"><span class="workbench-mark">${uiIcon("providers")}</span><strong>${needsVerification ? "Verify a provider to start" : "Connect a provider to start"}</strong><p>${needsVerification ? "Test a saved provider connection before sending requests." : "Add your provider’s API key to run text or image requests."}</p><a class="btn primary" href="${needsVerification ? "/pages/providers.html" : "/pages/providers.html?add=1"}">${needsVerification ? "Open Providers" : "Add a provider"}</a></div>`;
+      return;
+    }
+    const options = models.models.map(model => `<option value="${esc(model.model)}">${esc(model.provider === "qwen_image" ? "Qwen" : model.provider)} · ${esc(model.model)}</option>`).join("");
+    root.innerHTML = `<div class="pg-tabs" aria-label="Playground modes">${PLAYGROUND_TABS.map(([key, name, icon]) => `<button type="button" class="pg-tab" data-tab="${key}" aria-controls="pg-mode-${key}">${uiIcon(icon)} ${name}</button>`).join("")}</div>
+      <div id="pg-tab-content">${PLAYGROUND_TABS.map(([key]) => `<section class="pg-mode" id="pg-mode-${key}" hidden></section>`).join("")}</div>`;
+    const renderers = {chat: node => renderChat(node, options), raw:renderRaw, routing:renderRouting, batch:renderBatch};
+    const tabs = [...root.querySelectorAll(".pg-tab")];
+    const select = key => {
+      const selected = Object.hasOwn(renderers, key) ? key : "chat";
+      closeChatFullscreen();
+      tabs.forEach(tab => {
+        const active = tab.dataset.tab === selected;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-pressed", String(active));
+        document.getElementById(`pg-mode-${tab.dataset.tab}`).hidden = !active;
+      });
+      const node = document.getElementById(`pg-mode-${selected}`);
+      if (!node.hasChildNodes()) renderers[selected](node);
+      if (selected === "chat") scrollChatToLatest();
+    };
+    const selectFromUrl = () => select(new URLSearchParams(location.search).get("tab"));
+    selectFromUrl();
+    tabs.forEach(tab => {
+      tab.onclick = () => {
+        if (tab.classList.contains("active")) return;
+        const url = new URL(location.href);
+        if (tab.dataset.tab === "chat") url.searchParams.delete("tab");
+        else url.searchParams.set("tab", tab.dataset.tab);
+        history.pushState(null, "", url);
+        selectFromUrl();
+      };
+    });
+    window.addEventListener("popstate", selectFromUrl);
+  } catch (error) {
+    root.innerHTML = `<div class="error-panel"><h2>Playground unavailable</h2><p>${esc(error.message)}</p></div>`;
+  }
+}
+
+function workbench(intro, editor, output) {
+  return `<div class="playground-workbench"><p class="workbench-intro">${esc(intro)}</p><div class="workbench-grid">${editor}${output}</div></div>`;
+}
+
+function requestHistoryLink(id) {
+  return id ? `<a class="btn small" href="/pages/requests.html?id=${esc(encodeURIComponent(id))}">Open in Requests</a>` : "";
+}
+
+function renderRaw(root) {
+  const template = json({model:"auto", messages:[{role:"user", content:""}]});
+  root.innerHTML = workbench("Send a JSON payload to the Playground endpoint and inspect the full response.",
+    card("Request body", `<div class="endpoint-card"><span>POST</span><code>/api/playground</code></div>
+      <label class="sr-only" for="raw-json">JSON request body</label>
+      <textarea class="workbench-editor code-editor" id="raw-json" rows="12" spellcheck="false">${esc(template)}</textarea>
+      <div class="form-actions"><button class="btn primary" id="raw-send" type="button">Send raw request</button></div>`),
+    card("Response", `<div id="raw-output"><p class="workbench-empty">Send a request to view its JSON response here.</p></div>`));
+  const trigger = document.getElementById("raw-send");
+  const output = document.getElementById("raw-output");
+  trigger.onclick = async () => {
+    try {
+      const body = JSON.parse(document.getElementById("raw-json").value);
+      trigger.disabled = true;
+      output.innerHTML = '<p class="workbench-empty" role="status">Waiting for the gateway…</p>';
+      const data = await api("/api/playground", {method:"POST", body:JSON.stringify(body), timeoutMs:120000});
+      const response = data.response || data;
+      output.innerHTML = `<div class="workbench-result-meta">${statusBadge("Completed")}${requestHistoryLink(response.request_id || response.context?.request_id)}</div><pre class="code-block" id="raw-response">${esc(json(data))}</pre>`;
+    } catch (error) {
+      output.innerHTML = `<p class="workbench-empty" role="alert">${esc(error.message)}</p>`;
+    } finally {
+      trigger.disabled = false;
+    }
+  };
+}
+
+function renderRouting(root) {
+  root.innerHTML = workbench("Check which model the gateway would choose for a prompt before running it.",
+    card("Prompt", `<label class="sr-only" for="route-message">Prompt to route</label><textarea id="route-message" class="workbench-editor" rows="9" placeholder="Enter a prompt to preview its route…"></textarea><div class="form-actions"><button class="btn primary" id="route-run" type="button">Preview routing</button></div>`),
+    card("Routing decision", '<div id="route-result"><p class="workbench-empty">Model selection and reasons will appear here.</p></div>'));
+  const trigger = document.getElementById("route-run");
+  trigger.onclick = async () => {
+    const text = document.getElementById("route-message").value.trim();
+    if (!text) return toast("Enter a prompt first", "error");
+    const output = document.getElementById("route-result");
+    trigger.disabled = true;
+    output.innerHTML = '<p class="workbench-empty" role="status">Checking available models…</p>';
+    try {
+      const data = await api("/api/routing/diagnostics", {method:"POST", body:JSON.stringify({messages:[{role:"user", content:text}]})});
+      const selected = data.selected;
+      output.innerHTML = selected ? `<div class="route-result">
+        <div class="route-selected"><span class="workbench-mark">${uiIcon("route")}</span><div><span>${esc(selected.provider)}</span><strong>${esc(selected.model)}</strong></div></div>
+        <dl class="workbench-measurements"><div><dt>Score</dt><dd>${esc(selected.score ?? "—")}</dd></div><div><dt>Confidence</dt><dd>${esc(selected.confidence ?? "—")}</dd></div></dl>
+        ${selected.reasons?.length ? `<h3>Why it was selected</h3><ul>${selected.reasons.map(reason => `<li>${esc(reason)}</li>`).join("")}</ul>` : ""}
+      </div>` : '<p class="workbench-empty">No model was selected for this prompt.</p>';
+    } catch (error) {
+      output.innerHTML = `<p class="workbench-empty" role="alert">${esc(error.message)}</p>`;
+    } finally {
+      trigger.disabled = false;
+    }
+  };
+}
+
+function renderBatch(root) {
+  root.innerHTML = workbench("Enter one prompt per line. The gateway runs them in order with automatic model selection.",
+    card("Prompts", `<label class="sr-only" for="batch-input">Batch prompts</label><textarea id="batch-input" class="workbench-editor" rows="11" placeholder="Enter one prompt per line…"></textarea><div class="form-actions"><button class="btn primary" id="batch-run" type="button">Run batch</button></div>`),
+    card("Batch results", '<div id="batch-results"><p class="workbench-empty">Run a batch to see the outcome for each prompt.</p></div>'));
+  document.getElementById("batch-run").onclick = runBatch;
+}
+
+async function runBatch() {
+  const lines = document.getElementById("batch-input").value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (!lines.length) return toast("Enter at least one prompt", "error");
+  const trigger = document.getElementById("batch-run");
+  const output = document.getElementById("batch-results");
+  trigger.disabled = true;
+  output.innerHTML = `<p class="batch-progress" role="status">Running 0 of ${lines.length} requests</p><ol class="batch-results-list"></ol>`;
+  const progress = output.querySelector(".batch-progress");
+  const results = output.querySelector("ol");
+  let errors = 0;
+  try {
+    for (const text of lines) {
+      const row = document.createElement("li");
+      row.className = "batch-row";
+      try {
+        const data = await api("/api/playground", {method:"POST", body:JSON.stringify({model:"auto", messages:[{role:"user",content:text}], user:state.user?.email || null}), timeoutMs:120000});
+        const response = data.response || data;
+        row.innerHTML = `<div><strong>${esc(short(text,100))}</strong><span>${esc(response.llm?.model || response.model || "Completed")}</span></div><div>${cacheBadge(response)}${requestHistoryLink(response.request_id || response.context?.request_id)}</div>`;
+      } catch (error) {
+        errors++;
+        row.innerHTML = `<div><strong>${esc(short(text,100))}</strong><span>${esc(error.message)}</span></div>${statusBadge("Error")}`;
+      }
+      results.append(row);
+      progress.textContent = `Completed ${results.children.length} of ${lines.length} requests · ${errors} failed`;
+    }
+  } finally {
+    trigger.disabled = false;
+  }
+}
 
 function onboardingCard(data){
  if(!data?.show_getting_started)return "";
@@ -404,8 +897,53 @@ function authPage(kind){
  const query=new URLSearchParams(location.search);
  const oauthError=query.get("oauth_error");
  const message=oauthError==="oauth_cancelled"?"Sign-in was cancelled.":oauthError?"Sign-in could not be completed. Please try again.":"";
- root.innerHTML=`<div class="auth-shell"><section class="auth-story"><div class="brand"><div class="brand-icon">${uiIcon("providers")}</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong></div></div><h2>Your models.<br>Your workspace.</h2><p>Connect your own providers.<br>Make every request count.</p><div class="auth-flow"><div class="auth-providers"><span>DeepSeek</span><span>OpenAI</span><span>Qwen</span></div><span class="auth-flow-line" aria-hidden="true"></span><div class="brand-icon">${uiIcon("providers")}</div><span class="auth-flow-line" aria-hidden="true"></span><div class="auth-providers"><span>Semantic cache</span><span>Smart routing</span><span>Your workspace</span></div></div></section><div class="auth-card"><div class="brand centered"><div class="brand-icon">${uiIcon("providers")}</div><div class="brand-name"><strong>AI Semantic</strong><strong>Cache Gateway</strong></div></div><h1>Welcome back</h1><p>Continue with your existing account.</p><div class="oauth-actions"><a class="btn primary full oauth-btn github" href="/api/auth/oauth/github/start">${uiIcon("github")}Continue with GitHub</a><a class="btn full oauth-btn google" href="/api/auth/oauth/google/start"><span class="google-mark" aria-hidden="true">G</span>Continue with Google</a></div><div class="auth-divider"><span>Your account and workspace stay together.</span></div><div id="auth-error" role="alert" class="${message?"auth-error":"auth-info"}" ${message?"":"hidden"}>${esc(message)}</div></div></div>`;
+
+ root.innerHTML = `<div class="auth-shell">
+  <section class="auth-story">
+    ${brand()}
+    <div class="auth-story-copy"><h2>One gateway for your model requests.</h2><p>Connect a provider, test routing, and see when the cache answers a request.</p></div>
+    <div class="auth-flow" aria-label="Prompt, gateway, then cache or model provider">
+      <div><span class="workbench-mark">${uiIcon("playground")}</span><strong>Prompt</strong></div>
+      <span class="auth-flow-line" aria-hidden="true"></span>
+      <div><span class="workbench-mark">${uiIcon("gateway")}</span><strong>Gateway</strong></div>
+      <span class="auth-flow-line" aria-hidden="true"></span>
+      <div><span class="workbench-mark">${uiIcon("cache")}</span><strong>Cache or provider</strong></div>
+    </div>
+  </section>
+  <div class="auth-card">
+    <div class="auth-mobile-brand">${brand()}</div>
+    <h1>Sign in</h1><p>Open your Semantic Gateway workspace.</p>
+    <div class="oauth-actions">
+      <a class="btn primary full oauth-btn github" href="/api/auth/oauth/github/start">${uiIcon("github")}Continue with GitHub</a>
+      <a class="btn full oauth-btn google" href="/api/auth/oauth/google/start"><span class="google-mark" aria-hidden="true">G</span>Continue with Google</a>
+    </div>
+    <div id="auth-error" role="alert" class="auth-error" ${message ? "" : "hidden"}>${esc(message)}</div>
+  </div>
+ </div>`;
 }
 
-async function init(){const p=page();ensureDesignSystem();if(p==="login"){try{await api("/api/auth/me",{allowAuthRedirect:false});location.replace("/");return}catch{}authPage("login");return}if(!tokenStore()){try{await api("/api/auth/me",{allowAuthRedirect:false})}catch{location.href="/pages/login.html";return}}shell();const fn={dashboard,playground:playgroundPage,cache:cachePage,requests:requestsPage,providers:providersPage,metrics:metricsPage,system:systemPage,admin:adminPage,settings:settingsPage}[p]||dashboard;await loadIdentity();if(p==="admin"&&!state.user?.is_admin){location.replace("/");return}void loadStatus();await fn()}
+async function init() {
+  const current = page();
+  ensureDesignSystem();
+  try {
+    state.user = await api("/api/auth/me", {allowAuthRedirect:false});
+  } catch {
+    if (current === "login") authPage("login");
+    else location.replace("/pages/login.html");
+    return;
+  }
+  if (current === "login" || (["admin", "system"].includes(current) && !state.user.is_admin)) {
+    location.replace("/");
+    return;
+  }
+  shell();
+  renderIdentity();
+  void loadStatus();
+  const render = {
+    dashboard, playground:playgroundPage, cache:cachePage, requests:requestsPage,
+    providers:providersPage, metrics:metricsPage, system:systemPage, admin:adminPage, settings:settingsPage,
+  }[current] || dashboard;
+  await render();
+}
+
 window.addEventListener("DOMContentLoaded",init);

@@ -14,6 +14,10 @@ A self-hosted API gateway that checks exact and semantically similar response ca
 
 Python 3.11, FastAPI, Redis, Sentence Transformers, PostgreSQL/SQLite, JavaScript, and CSS. The provider layer supports OpenAI-compatible endpoints and configured provider adapters.
 
+## Console screenshots
+
+See the [console screenshot gallery](docs/ui-screenshots/README.md) for the dashboard, request workbench, and administration views. The gallery identifies the data and viewport used for each capture.
+
 ## Request flow
 
 ```mermaid
